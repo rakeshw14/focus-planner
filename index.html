@@ -44,13 +44,34 @@
 
         .current-day { border: 2px solid var(--accent) !important; box-shadow: 0 10px 20px -5px rgba(16, 185, 129, 0.15); }
 
-        /* Priority Styling */
         .priority-task { border-left: 4px solid #f59e0b !important; background-color: #fffbeb !important; }
         .dark .priority-task { background-color: #2d2510 !important; border-left-color: #f59e0b !important; }
         
         .star-icon { color: #d1d5db; cursor: pointer; transition: all 0.2s; }
         .star-active { color: #f59e0b !important; }
         .star-icon:hover { color: #f59e0b; scale: 1.2; }
+
+        #context-menu {
+            display: none; position: fixed; z-index: 1000;
+            background: white; border: 1px solid #eee; border-radius: 4px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1); width: 160px;
+        }
+        .dark #context-menu { background: #1a1a1a; border-color: #2d2d2d; }
+        .menu-item {
+            padding: 8px 12px; font-size: 11px; cursor: pointer; color: #666;
+            text-transform: uppercase; letter-spacing: 0.05em; transition: all 0.2s;
+        }
+        .dark .menu-item { color: #aaa; }
+        .menu-item:hover { background: #f9fafb; color: var(--accent); }
+        .dark .menu-item:hover { background: #242424; }
+
+        @keyframes pulse-timer {
+            0% { opacity: 1; }
+            50% { opacity: 0.4; }
+            100% { opacity: 1; }
+        }
+        .timer-running { animation: pulse-timer 2s infinite; }
+        .timer-urgent { animation: pulse-timer 0.8s infinite !important; }
 
         main { height: 100vh; overflow-y: auto !important; -webkit-overflow-scrolling: touch; }
 
@@ -63,8 +84,9 @@
         }
     </style>
 </head>
-<body class="font-sans min-h-screen flex flex-col md:flex-row md:overflow-hidden select-none">
+<body class="font-sans min-h-screen flex flex-col md:flex-row md:overflow-hidden select-none" onclick="hideMenu()">
     <div id="progress-bar" class="fixed top-0 left-0 h-0.5 bg-emerald-500 transition-all duration-700 z-50" style="width: 0%"></div>
+    <div id="context-menu"></div>
 
     <aside id="sidebar" class="bg-white border-r border-gray-100 p-6 flex flex-col h-screen overflow-y-auto shrink-0" style="width: 300px;">
         <h1 class="text-2xl font-light tracking-[0.3em] text-gray-300 uppercase mb-10 text-center">Focus</h1>
@@ -100,7 +122,7 @@
                 </h3>
             </div>
             <div class="collapse-container">
-                <div id="project-list" class="space-y-8" ondragover="allowDrop(event)" ondrop="dropProject(event)"></div>
+                <div id="project-list" class="space-y-8" ondragover="allowDrop(event)" ondrop="dropToProjectSection(event)"></div>
                 <input type="text" id="project-master-name-input" placeholder="New project..." onkeypress="handleProjectSubmit(event)" class="w-full bg-transparent border-b border-gray-100 py-1 mt-6 text-xs outline-none focus:border-emerald-300">
             </div>
         </div>
@@ -115,10 +137,20 @@
 
     <main class="flex-1 p-6 md:p-12 bg-white relative select-text">
         <header class="mb-10 flex justify-between items-center">
-            <div class="flex items-center gap-4">
+            <div class="flex items-center gap-8">
                 <button onclick="toggleZen()" title="Zen Mode" class="p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-300 hover:text-emerald-500">
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
                 </button>
+                
+                <div id="focus-timer-container" class="flex items-center gap-3 transition-colors duration-500">
+                    <div id="timer-wrapper" class="relative">
+                        <span id="timer-display" onclick="editTimerInline()" class="text-xs font-mono font-bold tracking-widest cursor-pointer transition-colors duration-500">25:00</span>
+                    </div>
+                    <button id="timer-btn" onclick="toggleTimer()" class="hover:opacity-70 transition-opacity">
+                        <svg id="timer-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="transition-colors duration-500"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                    </button>
+                </div>
+
                 <p id="week-display" class="text-xs font-bold uppercase tracking-[0.2em] cursor-pointer" onclick="goToday()"></p>
             </div>
             <div class="flex gap-6 text-[10px] font-bold uppercase tracking-widest text-gray-400">
@@ -129,9 +161,6 @@
         </header>
 
         <div class="relative min-h-[600px] pb-20">
-            <button onclick="changeWeek(-1)" class="nav-edge -left-4 md:-left-8" title="Previous Week">←</button>
-            <button onclick="changeWeek(1)" class="nav-edge -right-4 md:-right-8" title="Next Week">→</button>
-
             <div id="planner-grid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-7 gap-4"></div>
         </div>
     </main>
@@ -148,24 +177,103 @@
         let draggedInfo = null;
         let activeInputId = null;
 
-        const resizer = document.getElementById("resizer");
-        const sidebar = document.getElementById("sidebar");
-        let isResizing = false;
-
-        resizer.addEventListener("mousedown", () => { isResizing = true; document.body.style.cursor = "col-resize"; });
-        document.addEventListener("mousemove", (e) => {
-            if (!isResizing) return;
-            let newWidth = e.clientX;
-            if (newWidth > 200 && newWidth < 500) { sidebar.style.width = newWidth + "px"; data.ui.sidebarWidth = newWidth; }
-        });
-        document.addEventListener("mouseup", () => { isResizing = false; document.body.style.cursor = "default"; save(); });
-
-        const formatDate = (d) => d.toISOString().split('T')[0];
-        function getMonday(d) {
-            d = new Date(d); let day = d.getDay(), diff = d.getDate() - day + (day == 0 ? -6 : 1);
-            return new Date(d.setDate(diff));
+        // Sound Engine
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        function playSound(freq, type, duration) {
+            try {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = type; osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+                gain.gain.setValueAtTime(0.05, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+                osc.connect(gain); gain.connect(audioCtx.destination);
+                osc.start(); osc.stop(audioCtx.currentTime + duration);
+            } catch(e) {}
         }
 
+        // Timer Logic with Dynamic Colors
+        let timerSeconds = 1500;
+        let timerInterval = null;
+
+        function updateTimerVisuals() {
+            const display = document.getElementById('timer-display');
+            const icon = document.getElementById('timer-icon');
+            const container = document.getElementById('focus-timer-container');
+            
+            if (timerSeconds <= 0) {
+                display.style.color = '#ef4444'; // Red
+                icon.style.color = '#ef4444';
+                display.classList.remove('timer-running', 'timer-urgent');
+                return;
+            }
+
+            if (timerInterval) {
+                if (timerSeconds <= 60) { // Last minute
+                    display.style.color = '#ef4444'; // Red
+                    icon.style.color = '#ef4444';
+                    display.className = 'text-xs font-mono font-bold tracking-widest cursor-pointer timer-urgent';
+                } else if (timerSeconds <= 300) { // Last 5 mins
+                    display.style.color = '#f59e0b'; // Amber
+                    icon.style.color = '#f59e0b';
+                    display.className = 'text-xs font-mono font-bold tracking-widest cursor-pointer timer-running';
+                } else {
+                    display.style.color = '#10b981'; // Green
+                    icon.style.color = '#10b981';
+                    display.className = 'text-xs font-mono font-bold tracking-widest cursor-pointer timer-running';
+                }
+            } else {
+                display.style.color = '#d1d5db'; // Grey (paused/idle)
+                icon.style.color = '#d1d5db';
+                display.className = 'text-xs font-mono font-bold tracking-widest cursor-pointer';
+            }
+        }
+
+        function toggleTimer() {
+            if (timerInterval) {
+                clearInterval(timerInterval); timerInterval = null;
+                document.getElementById('timer-icon').innerHTML = '<polygon points="5 3 19 12 5 21 5 3"></polygon>';
+            } else {
+                document.getElementById('timer-icon').innerHTML = '<rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect>';
+                timerInterval = setInterval(() => {
+                    if(timerSeconds > 0) {
+                        timerSeconds--; updateTimerDisplay(); updateTimerVisuals();
+                    } else {
+                        clearInterval(timerInterval); timerInterval = null;
+                        playSound(880, 'sine', 0.5); updateTimerDisplay(); updateTimerVisuals();
+                        alert("Session complete. Time to breathe.");
+                    }
+                }, 1000);
+            }
+            updateTimerVisuals();
+        }
+
+        function updateTimerDisplay() {
+            const m = Math.floor(timerSeconds / 60); const s = timerSeconds % 60;
+            document.getElementById('timer-display').innerText = `${m}:${s < 10 ? '0' : ''}${s}`;
+        }
+
+        function editTimerInline() {
+            if (timerInterval) return;
+            const display = document.getElementById('timer-display');
+            const wrapper = document.getElementById('timer-wrapper');
+            const currentMins = Math.floor(timerSeconds / 60);
+            const input = document.createElement('input');
+            input.type = 'text'; input.value = currentMins;
+            input.className = "bg-transparent border-b border-emerald-500 outline-none w-10 text-xs font-mono font-bold text-emerald-500 text-center";
+            display.style.display = 'none'; wrapper.appendChild(input);
+            input.focus(); input.select();
+
+            const finalize = () => {
+                const val = parseInt(input.value);
+                if (!isNaN(val) && val > 0) timerSeconds = val * 60;
+                input.remove(); display.style.display = 'inline';
+                updateTimerDisplay(); updateTimerVisuals();
+            };
+            input.onblur = finalize;
+            input.onkeydown = (e) => { if(e.key === 'Enter') finalize(); };
+        }
+
+        // Standard Storage and Navigation
         function save() { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); }
         function toggleTheme() { document.body.classList.toggle('dark'); }
         function toggleZen() { data.ui.zenMode = !data.ui.zenMode; save(); applyUI(); }
@@ -173,29 +281,67 @@
         function goToday() { startOfWeek = getMonday(new Date()); render(); }
         function setView(view) { currentView = view; render(); }
         function toggleSec(sec) { const key = sec + 'Open'; data.ui[key] = !data.ui[key]; save(); render(); }
-        
-        function applyUI() {
-            document.getElementById('section-routines').classList.toggle('is-open', data.ui.routinesOpen);
-            document.getElementById('section-someday').classList.toggle('is-open', data.ui.somedayOpen);
-            document.getElementById('section-projects').classList.toggle('is-open', data.ui.projectsOpen);
-            document.body.classList.toggle('zen-mode', data.ui.zenMode);
-            if (!data.ui.zenMode && window.innerWidth > 768) sidebar.style.width = data.ui.sidebarWidth + "px";
+        const formatDate = (d) => d.toISOString().split('T')[0];
+        function getMonday(d) { d = new Date(d); let day = d.getDay(), diff = d.getDate() - day + (day == 0 ? -6 : 1); return new Date(d.setDate(diff)); }
+
+        // Sidebar Resizer
+        const resizer = document.getElementById("resizer");
+        const sidebar = document.getElementById("sidebar");
+        let isResizing = false;
+        resizer.addEventListener("mousedown", () => isResizing = true);
+        document.addEventListener("mousemove", (e) => { if (isResizing && e.clientX > 200 && e.clientX < 500) { sidebar.style.width = e.clientX + "px"; data.ui.sidebarWidth = e.clientX; } });
+        document.addEventListener("mouseup", () => { if(isResizing) { isResizing = false; save(); } });
+
+        // Context Menu
+        function showContextMenu(e, type, src, idx, element) {
+            e.preventDefault(); e.stopPropagation();
+            const menu = document.getElementById('context-menu');
+            menu.style.display = 'block'; menu.style.left = `${e.pageX}px`; menu.style.top = `${e.pageY}px`;
+            let html = '';
+            if (type === 'project-task') html += `<div class="menu-item" onclick="scheduleProjectTask(${src}, ${idx})">Move to Today</div>`;
+            html += `<div class="menu-item" onclick="inlineEditFromMenu('${type}', '${src}', ${idx})">Rename</div>`;
+            menu.innerHTML = html;
+            window.activeContextElement = element;
+        }
+        function hideMenu() { document.getElementById('context-menu').style.display = 'none'; }
+
+        function scheduleProjectTask(pIdx, tIdx) {
+            const todayStr = formatDate(new Date());
+            if(!data.calendar[todayStr]) data.calendar[todayStr] = [];
+            data.calendar[todayStr].push(data.projects[pIdx].tasks.splice(tIdx, 1)[0]);
+            save(); render(); hideMenu();
         }
 
+        function inlineEditFromMenu(type, src, idx) {
+            hideMenu();
+            if(window.activeContextElement) inlineEdit({target: window.activeContextElement, stopPropagation: () => {}}, type, src, idx);
+        }
+
+        function inlineEdit(e, type, src, idx) {
+            const element = e.target; e.stopPropagation();
+            const currentText = (type === 'project-name') ? data.projects[idx].name : element.innerText;
+            const input = document.createElement('input');
+            input.value = currentText; input.className = "bg-transparent border-b border-emerald-500 outline-none w-full text-inherit font-inherit";
+            const originalContent = element.innerHTML;
+            element.innerHTML = ''; element.appendChild(input); input.focus(); input.select();
+            const saveAction = () => {
+                const newText = input.value.trim();
+                if (newText && newText !== currentText) {
+                    if (type === 'calendar') data.calendar[src][idx].text = newText;
+                    else if (type === 'routines') data.routines[idx].text = newText;
+                    else if (type === 'someday') data.someday[idx].text = newText;
+                    else if (type === 'project-task') data.projects[src].tasks[idx].text = newText;
+                    else if (type === 'project-name') data.projects[idx].name = newText;
+                    save(); render();
+                } else { element.innerHTML = originalContent; }
+            };
+            input.onblur = saveAction;
+            input.onkeydown = (ev) => { if (ev.key === 'Enter') saveAction(); if (ev.key === 'Escape') { input.onblur = null; element.innerHTML = originalContent; } };
+        }
+
+        // Drag-Drop Hygiene
         function allowDrop(e) { e.preventDefault(); }
         function startDrag(e, type, src, idx) { e.stopPropagation(); draggedInfo = { type, src, idx }; }
-        function startProjectDrag(e, idx) { draggedInfo = { type: 'reorder-p', idx }; }
-        
-        function dropProject(e) {
-            e.preventDefault(); if(!draggedInfo || draggedInfo.type !== 'reorder-p') return;
-            const target = e.target.closest('[data-p-idx]');
-            if(!target) return;
-            const to = parseInt(target.getAttribute('data-p-idx'));
-            const p = data.projects.splice(draggedInfo.idx, 1)[0];
-            data.projects.splice(to, 0, p);
-            draggedInfo = null; save(); render();
-        }
-
         function dropToDay(e, toDS) {
             e.preventDefault(); if(!draggedInfo) return;
             let t; const { type, src, idx } = draggedInfo;
@@ -206,47 +352,51 @@
             if(t) { if(!data.calendar[toDS]) data.calendar[toDS] = []; data.calendar[toDS].push(t); save(); render(); }
             draggedInfo = null;
         }
+        function dropToProjectSection(e) {
+            e.preventDefault(); if(!draggedInfo) return;
+            const targetProject = e.target.closest('[data-p-idx]');
+            if (!targetProject) return;
+            const pIdx = parseInt(targetProject.getAttribute('data-p-idx'));
+            let t; const { type, src, idx } = draggedInfo;
+            if(type === 'calendar') t = data.calendar[src].splice(idx, 1)[0];
+            else if(type === 'someday') t = data.someday.splice(idx, 1)[0];
+            if(t) { t.completed = false; data.projects[pIdx].tasks.push(t); save(); render(); }
+            draggedInfo = null;
+        }
 
-        function togglePriority(ds, idx) {
+        function rolloverTasks() {
+            const todayStr = formatDate(new Date());
+            Object.keys(data.calendar).forEach(dateStr => {
+                if (dateStr < todayStr) {
+                    const pending = data.calendar[dateStr].filter(t => !t.completed);
+                    if (pending.length > 0) {
+                        if (!data.calendar[todayStr]) data.calendar[todayStr] = [];
+                        data.calendar[todayStr] = [...data.calendar[todayStr], ...pending];
+                        data.calendar[dateStr] = data.calendar[dateStr].filter(t => t.completed);
+                    }
+                }
+            });
+            save();
+        }
+
+        function togglePriority(ds, idx, e) {
+            e.stopPropagation();
             data.calendar[ds][idx].priority = !data.calendar[ds][idx].priority;
             save(); render();
         }
 
-        function inlineEdit(e, type, src, idx) {
-            const element = e.target;
-            e.stopPropagation();
-            
-            const currentText = (type === 'project-name') ? data.projects[idx].name : element.innerText;
-            const input = document.createElement('input');
-            
-            input.value = currentText;
-            input.className = "bg-transparent border-b border-emerald-500 outline-none w-full text-inherit font-inherit";
-            
-            const originalContent = element.innerHTML;
-            element.innerHTML = '';
-            element.appendChild(input);
-            input.focus();
-            input.select();
+        function toggleTaskComplete(ds, idx) {
+            data.calendar[ds][idx].completed = !data.calendar[ds][idx].completed;
+            if(data.calendar[ds][idx].completed) playSound(660, 'sine', 0.1);
+            save(); render();
+        }
 
-            const saveAction = () => {
-                const newText = input.value.trim();
-                if (newText && newText !== currentText) {
-                    if (type === 'calendar') data.calendar[src][idx].text = newText;
-                    else if (type === 'routines') data.routines[idx].text = newText;
-                    else if (type === 'someday') data.someday[idx].text = newText;
-                    else if (type === 'project-task') data.projects[src].tasks[idx].text = newText;
-                    else if (type === 'project-name') data.projects[idx].name = newText;
-                    save(); render();
-                } else {
-                    element.innerHTML = originalContent;
-                }
-            };
-
-            input.onblur = saveAction;
-            input.onkeydown = (ev) => {
-                if (ev.key === 'Enter') saveAction();
-                if (ev.key === 'Escape') { input.onblur = null; element.innerHTML = originalContent; }
-            };
+        function applyUI() {
+            document.getElementById('section-routines').classList.toggle('is-open', data.ui.routinesOpen);
+            document.getElementById('section-someday').classList.toggle('is-open', data.ui.somedayOpen);
+            document.getElementById('section-projects').classList.toggle('is-open', data.ui.projectsOpen);
+            document.body.classList.toggle('zen-mode', data.ui.zenMode);
+            if (!data.ui.zenMode && window.innerWidth > 768) sidebar.style.width = data.ui.sidebarWidth + "px";
         }
 
         function render() {
@@ -254,50 +404,38 @@
             grid.innerHTML = '';
             let vT = 0, vD = 0; const todayStr = formatDate(new Date());
             const weekDays = [];
-            
-            // Re-generate days correctly based on startOfWeek
             for(let i=0; i<7; i++) {
-                let d = new Date(startOfWeek);
-                d.setDate(d.getDate() + i);
+                let d = new Date(startOfWeek); d.setDate(d.getDate() + i);
                 const ds = formatDate(d);
                 if (currentView === 'day' && ds !== todayStr) continue;
                 if (currentView === 'work' && (d.getDay() === 0 || d.getDay() === 6)) continue;
                 weekDays.push(d);
             }
-            // Ensure Day view shows something even if not today
             if (currentView === 'day' && weekDays.length === 0) weekDays.push(new Date());
-
             grid.className = `grid gap-4 ${currentView === 'day' ? 'grid-cols-1 max-w-2xl mx-auto' : currentView === 'work' ? 'md:grid-cols-5' : 'md:grid-cols-7'}`;
 
             weekDays.forEach(d => {
                 const ds = formatDate(d);
                 let tasks = data.calendar[ds] || [];
-                
-                // Sorting logic: Priority tasks stay at the top
-                const sortedTasks = [...tasks].sort((a, b) => (b.priority ? 1 : 0) - (a.priority ? 1 : 0));
+                const sorted = [...tasks].map((t, i) => ({...t, originalIdx: i}))
+                                        .sort((a, b) => (b.priority ? 1 : 0) - (a.priority ? 1 : 0));
 
                 const isToday = ds === todayStr;
                 const col = document.createElement('div');
                 col.className = `day-col flex flex-col bg-white p-5 rounded-sm border border-gray-100 min-h-[500px] transition-all relative ${isToday ? 'current-day' : ''}`;
                 col.ondragover = allowDrop; col.ondrop = (e) => dropToDay(e, ds);
-                
                 col.innerHTML = `
                     <div class="flex justify-between items-center mb-6 border-b pb-3">
                         <div class="text-[11px] font-black uppercase tracking-widest ${isToday ? 'text-emerald-500' : 'text-gray-400'}">${d.toLocaleDateString('en-US', { weekday: 'long' })} <span class="opacity-30 ml-1 font-mono">${d.getDate()}</span></div>
                         <span onclick="data.calendar['${ds}']=[];save();render();" class="text-[10px] text-gray-300 cursor-pointer hover:text-red-400 ${tasks.length?'':'hidden'}">✕</span>
                     </div>
                     <input type="text" placeholder="+" onkeypress="if(event.key==='Enter'&&this.value.trim()){if(!data.calendar['${ds}'])data.calendar['${ds}']=[];data.calendar['${ds}'].push({text:this.value,completed:false,priority:false});this.value='';save();render();}" class="w-full bg-transparent border-b border-gray-50 pb-4 mb-4 text-xs outline-none">
-                    
-                    <div class="space-y-3 mb-4">${sortedTasks.map((t, i) => {
+                    <div class="space-y-3 mb-4">${sorted.map(t => {
                         vT++; if(t.completed) vD++;
-                        // We need the original index for toggling/deleting correctly after sorting
-                        const originalIdx = tasks.indexOf(t); 
-                        return `<div draggable="true" ondragstart="startDrag(event, 'calendar', '${ds}', ${originalIdx})" class="group flex items-center justify-between text-xs p-3 bg-gray-50 rounded-sm cursor-move border-l-2 ${t.priority ? 'priority-task' : (t.isRoutine ? 'border-emerald-400' : 'border-transparent')}">
-                            <span onclick="togglePriority('${ds}', ${originalIdx})" class="star-icon mr-2 text-[14px] ${t.priority ? 'star-active' : ''}">${t.priority ? '★' : '☆'}</span>
-                            <span onclick="if(event.detail === 1){data.calendar['${ds}'][${originalIdx}].completed=!data.calendar['${ds}'][${originalIdx}].completed;save();render();}" 
-                                  ondblclick="inlineEdit(event, 'calendar', '${ds}', ${originalIdx})"
-                                  class="cursor-pointer flex-1 ${t.completed ? 'done' : ''}">${t.text}</span>
-                            <button onclick="data.calendar['${ds}'].splice(${originalIdx},1);save();render();" class="opacity-0 group-hover:opacity-100 text-gray-300 ml-2">✕</button>
+                        return `<div draggable="true" ondragstart="startDrag(event, 'calendar', '${ds}', ${t.originalIdx})" oncontextmenu="showContextMenu(event, 'calendar', '${ds}', ${t.originalIdx}, this.querySelector('.task-text'))" class="group flex items-center justify-between text-xs p-3 bg-gray-50 rounded-sm cursor-move border-l-2 ${t.priority ? 'priority-task' : (t.isRoutine ? 'border-emerald-400' : 'border-transparent')}">
+                            <span onclick="togglePriority('${ds}', ${t.originalIdx}, event)" class="star-icon mr-2 text-[14px] ${t.priority ? 'star-active' : ''}">${t.priority ? '★' : '☆'}</span>
+                            <span onclick="toggleTaskComplete('${ds}', ${t.originalIdx})" class="task-text cursor-pointer flex-1 ${t.completed ? 'done' : ''}">${t.text}</span>
+                            <button onclick="data.calendar['${ds}'].splice(${t.originalIdx},1);save();render();" class="opacity-0 group-hover:opacity-100 text-gray-300 ml-2">✕</button>
                         </div>`;
                     }).join('')}</div>
                 `;
@@ -307,24 +445,22 @@
             document.getElementById('week-display').innerText = `${startOfWeek.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} — ${new Date(new Date(startOfWeek).setDate(startOfWeek.getDate()+6)).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
             document.getElementById('progress-bar').style.width = vT ? (vD/vT)*100 + '%' : '0%';
             document.querySelectorAll('.view-btn').forEach(btn => btn.classList.toggle('active-tab', btn.id === `btn-${currentView}`));
-            
-            renderSidebar(); applyUI();
-            if (activeInputId) { const el = document.getElementById(activeInputId); if (el) el.focus(); }
+            renderSidebar(); applyUI(); updateTimerVisuals();
         }
 
         function renderSidebar() {
-            document.getElementById('routine-list').innerHTML = data.routines.map((r, i) => `<div draggable="true" ondragstart="startDrag(event, 'routine', null, ${i})" class="group flex items-center justify-between text-[11px] p-2 bg-emerald-50/30 border border-emerald-100 rounded-sm mb-1 cursor-grab"><span ondblclick="inlineEdit(event, 'routines', null, ${i})">${r.text}</span><button onclick="data.routines.splice(${i},1);save();render();" class="opacity-0 group-hover:opacity-100 text-emerald-300">✕</button></div>`).join('');
-            document.getElementById('someday-list').innerHTML = data.someday.map((s, i) => `<div draggable="true" ondragstart="startDrag(event, 'someday', null, ${i})" class="group flex items-center justify-between text-[11px] p-2 bg-emerald-50/30 border border-emerald-100 rounded-sm mb-1 cursor-grab"><span ondblclick="inlineEdit(event, 'someday', null, ${i})">${s.text}</span><button onclick="data.someday.splice(${i},1);save();render();" class="opacity-0 group-hover:opacity-100 text-gray-300">✕</button></div>`).join('');
+            document.getElementById('routine-list').innerHTML = data.routines.map((r, i) => `<div draggable="true" ondragstart="startDrag(event, 'routine', null, ${i})" oncontextmenu="showContextMenu(event, 'routines', null, ${i}, this.querySelector('span'))" class="group flex items-center justify-between text-[11px] p-2 bg-emerald-50/30 border border-emerald-100 rounded-sm mb-1 cursor-grab"><span>${r.text}</span><button onclick="data.routines.splice(${i},1);save();render();" class="opacity-0 group-hover:opacity-100 text-emerald-300">✕</button></div>`).join('');
+            document.getElementById('someday-list').innerHTML = data.someday.map((s, i) => `<div draggable="true" ondragstart="startDrag(event, 'someday', null, ${i})" oncontextmenu="showContextMenu(event, 'someday', null, ${i}, this.querySelector('span'))" class="group flex items-center justify-between text-[11px] p-2 bg-emerald-50/30 border border-emerald-100 rounded-sm mb-1 cursor-grab"><span>${s.text}</span><button onclick="data.someday.splice(${i},1);save();render();" class="opacity-0 group-hover:opacity-100 text-gray-300">✕</button></div>`).join('');
             document.getElementById('project-list').innerHTML = data.projects.map((p, pIdx) => `
-                <div class="mb-6 p-2 rounded-sm hover:bg-gray-50/50" draggable="true" ondragstart="startProjectDrag(event, ${pIdx})" data-p-idx="${pIdx}">
+                <div class="mb-6 p-2 rounded-sm hover:bg-gray-50/50" draggable="true" ondragstart="startProjectDrag(event, ${pIdx})" ondragover="allowDrop(event)" ondrop="dropToProjectSection(event)" data-p-idx="${pIdx}">
                     <div class="group flex justify-between items-center mb-2 cursor-move">
                         <span class="text-[10px] font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2" ondblclick="inlineEdit(event, 'project-name', null, ${pIdx})">⠿ ${p.name}</span>
                         <button onclick="if(confirm('Delete project?')){data.projects.splice(${pIdx},1);save();render();}" class="opacity-0 group-hover:opacity-100 text-gray-300">✕</button>
                     </div>
                     <div class="space-y-1 mb-2">
                         ${p.tasks.map((t, tIdx) => `
-                            <div draggable="true" ondragstart="startDrag(event, 'project-task', ${pIdx}, ${tIdx})" class="group flex items-center justify-between text-[11px] p-2 bg-white shadow-sm border border-gray-100 rounded-sm cursor-grab">
-                                <span ondblclick="inlineEdit(event, 'project-task', ${pIdx}, ${tIdx})" class="truncate flex-1">${t.text}</span>
+                            <div draggable="true" ondragstart="startDrag(event, 'project-task', ${pIdx}, ${tIdx})" oncontextmenu="showContextMenu(event, 'project-task', ${pIdx}, ${tIdx}, this.querySelector('span'))" class="group flex items-center justify-between text-[11px] p-2 bg-white shadow-sm border border-gray-100 rounded-sm cursor-grab">
+                                <span class="truncate flex-1 hover:text-emerald-500 cursor-pointer">${t.text}</span>
                                 <button onclick="data.projects[${pIdx}].tasks.splice(${tIdx},1);save();render();" class="opacity-0 group-hover:opacity-100 text-gray-300 ml-2">✕</button>
                             </div>`).join('')}
                     </div>
@@ -338,7 +474,7 @@
         function handleProjectSubmit(e) { if(e.key==='Enter' && e.target.value.trim()){ data.projects.push({name:e.target.value, tasks:[]}); e.target.value=''; activeInputId='project-master-name-input'; save(); render(); }}
         function exportData() { const b=new Blob([JSON.stringify(data)], {type:'application/json'}); const u=URL.createObjectURL(b); const a=document.createElement('a'); a.href=u; a.download=`focus-backup.json`; a.click(); }
 
-        window.onload = () => { if(new Date().getHours() >= 19 || new Date().getHours() < 7) document.body.classList.add('dark'); render(); }
+        window.onload = () => { if(new Date().getHours() >= 19 || new Date().getHours() < 7) document.body.classList.add('dark'); rolloverTasks(); render(); }
     </script>
 </body>
 </html>
