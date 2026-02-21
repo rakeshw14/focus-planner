@@ -19,7 +19,6 @@
         .dark .bg-white { background-color: #1a1a1a; border-color: #2d2d2d; }
         .dark .bg-gray-50 { background-color: #242424; }
         
-        /* Floating Side Navigation - Fixed & Final */
         .nav-edge {
             position: absolute; top: 50%; transform: translateY(-50%);
             width: 44px; height: 44px; display: flex; align-items: center; justify-content: center;
@@ -31,7 +30,6 @@
         
         .active-tab { border-bottom: 2px solid var(--accent); color: var(--accent) !important; }
 
-        /* Sidebar Logic */
         .collapse-container { display: none; }
         .is-open .collapse-container { display: block; }
         .rotate-icon { transition: transform 0.2s; transform: rotate(-90deg); }
@@ -197,6 +195,44 @@
             draggedInfo = null;
         }
 
+        // --- INLINE EDITING LOGIC ---
+        function inlineEdit(e, type, src, idx) {
+            const element = e.target;
+            e.stopPropagation(); // Stop click from triggering toggle logic
+            
+            const currentText = (type === 'project-name') ? data.projects[idx].name : element.innerText;
+            const input = document.createElement('input');
+            
+            input.value = currentText;
+            input.className = "bg-transparent border-b border-emerald-500 outline-none w-full text-inherit font-inherit";
+            
+            const originalContent = element.innerHTML;
+            element.innerHTML = '';
+            element.appendChild(input);
+            input.focus();
+            input.select();
+
+            const saveAction = () => {
+                const newText = input.value.trim();
+                if (newText && newText !== currentText) {
+                    if (type === 'calendar') data.calendar[src][idx].text = newText;
+                    else if (type === 'routines') data.routines[idx].text = newText;
+                    else if (type === 'someday') data.someday[idx].text = newText;
+                    else if (type === 'project-task') data.projects[src].tasks[idx].text = newText;
+                    else if (type === 'project-name') data.projects[idx].name = newText;
+                    save(); render();
+                } else {
+                    element.innerHTML = originalContent;
+                }
+            };
+
+            input.onblur = saveAction;
+            input.onkeydown = (ev) => {
+                if (ev.key === 'Enter') saveAction();
+                if (ev.key === 'Escape') { input.onblur = null; element.innerHTML = originalContent; }
+            };
+        }
+
         function render() {
             const grid = document.getElementById('planner-grid');
             grid.innerHTML = '';
@@ -227,8 +263,10 @@
                     <div class="flex-1 overflow-y-auto space-y-3 mb-4">${tasks.map((t, i) => {
                         vT++; if(t.completed) vD++;
                         return `<div draggable="true" ondragstart="startDrag(event, 'calendar', '${ds}', ${i})" class="group flex items-center justify-between text-xs p-3 bg-gray-50 rounded-sm cursor-move border-l-2 ${t.isRoutine ? 'border-emerald-400' : 'border-transparent'}">
-                            <span onclick="data.calendar['${ds}'][${i}].completed=!data.calendar['${ds}'][${i}].completed;save();render();" class="cursor-pointer ${t.completed ? 'done' : ''}">${t.text}</span>
-                            <button onclick="data.calendar['${ds}'].splice(${i},1);save();render();" class="opacity-0 group-hover:opacity-100 text-gray-300">✕</button>
+                            <span onclick="if(event.detail === 1){data.calendar['${ds}'][${i}].completed=!data.calendar['${ds}'][${i}].completed;save();render();}" 
+                                  ondblclick="inlineEdit(event, 'calendar', '${ds}', ${i})"
+                                  class="cursor-pointer flex-1 ${t.completed ? 'done' : ''}">${t.text}</span>
+                            <button onclick="data.calendar['${ds}'].splice(${i},1);save();render();" class="opacity-0 group-hover:opacity-100 text-gray-300 ml-2">✕</button>
                         </div>`;
                     }).join('')}</div>
                     <input type="text" placeholder="+" onkeypress="if(event.key==='Enter'&&this.value.trim()){if(!data.calendar['${ds}'])data.calendar['${ds}']=[];data.calendar['${ds}'].push({text:this.value,completed:false});this.value='';save();render();}" class="w-full bg-transparent border-t border-gray-50 pt-4 text-xs outline-none">
@@ -245,16 +283,16 @@
         }
 
         function renderSidebar() {
-            document.getElementById('routine-list').innerHTML = data.routines.map((r, i) => `<div draggable="true" ondragstart="startDrag(event, 'routine', null, ${i})" class="group flex items-center justify-between text-[11px] p-2 bg-emerald-50/30 border border-emerald-100 rounded-sm mb-1 cursor-grab"><span>${r.text}</span><button onclick="data.routines.splice(${i},1);save();render();" class="opacity-0 group-hover:opacity-100 text-emerald-300">✕</button></div>`).join('');
-            document.getElementById('someday-list').innerHTML = data.someday.map((s, i) => `<div draggable="true" ondragstart="startDrag(event, 'someday', null, ${i})" class="group flex items-center justify-between text-[11px] p-2 bg-emerald-50/30 border border-emerald-100 rounded-sm mb-1 cursor-grab"><span>${s.text}</span><button onclick="data.someday.splice(${i},1);save();render();" class="opacity-0 group-hover:opacity-100 text-gray-300">✕</button></div>`).join('');
+            document.getElementById('routine-list').innerHTML = data.routines.map((r, i) => `<div draggable="true" ondragstart="startDrag(event, 'routine', null, ${i})" class="group flex items-center justify-between text-[11px] p-2 bg-emerald-50/30 border border-emerald-100 rounded-sm mb-1 cursor-grab"><span ondblclick="inlineEdit(event, 'routines', null, ${i})">${r.text}</span><button onclick="data.routines.splice(${i},1);save();render();" class="opacity-0 group-hover:opacity-100 text-emerald-300">✕</button></div>`).join('');
+            document.getElementById('someday-list').innerHTML = data.someday.map((s, i) => `<div draggable="true" ondragstart="startDrag(event, 'someday', null, ${i})" class="group flex items-center justify-between text-[11px] p-2 bg-emerald-50/30 border border-emerald-100 rounded-sm mb-1 cursor-grab"><span ondblclick="inlineEdit(event, 'someday', null, ${i})">${s.text}</span><button onclick="data.someday.splice(${i},1);save();render();" class="opacity-0 group-hover:opacity-100 text-gray-300">✕</button></div>`).join('');
             document.getElementById('project-list').innerHTML = data.projects.map((p, pIdx) => `
                 <div class="mb-6 p-2 rounded-sm hover:bg-gray-50/50" draggable="true" ondragstart="startProjectDrag(event, ${pIdx})" data-p-idx="${pIdx}">
                     <div class="group flex justify-between items-center mb-2 cursor-move">
-                        <span class="text-[10px] font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2">⠿ ${p.name}</span>
+                        <span class="text-[10px] font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2" ondblclick="inlineEdit(event, 'project-name', null, ${pIdx})">⠿ ${p.name}</span>
                         <button onclick="data.projects.splice(${pIdx},1);save();render();" class="opacity-0 group-hover:opacity-100 text-gray-300">✕</button>
                     </div>
                     <div class="space-y-1 mb-2">
-                        ${p.tasks.map((t, tIdx) => `<div draggable="true" ondragstart="startDrag(event, 'project-task', ${pIdx}, ${tIdx})" class="text-[11px] p-2 bg-white shadow-sm border border-gray-100 rounded-sm cursor-grab truncate">${t.text}</div>`).join('')}
+                        ${p.tasks.map((t, tIdx) => `<div draggable="true" ondragstart="startDrag(event, 'project-task', ${pIdx}, ${tIdx})" ondblclick="inlineEdit(event, 'project-task', ${pIdx}, ${tIdx})" class="text-[11px] p-2 bg-white shadow-sm border border-gray-100 rounded-sm cursor-grab truncate">${t.text}</div>`).join('')}
                     </div>
                     <input type="text" id="p-in-${pIdx}" placeholder="+" onfocus="activeInputId='p-in-${pIdx}'" onkeypress="if(event.key==='Enter'&&this.value.trim()){data.projects[${pIdx}].tasks.push({text:this.value,completed:false});this.value='';save();render();}" class="w-full bg-transparent text-[10px] outline-none border-b border-gray-100">
                 </div>
