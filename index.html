@@ -8,7 +8,6 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="theme-color" content="#10b981">
-    
     <link rel="manifest" href="data:application/manifest+json,{%22name%22:%22Focus%20Infinite%22,%22short_name%22:%22Focus%22,%22start_url%22:%22.%22,%22display%22:%22standalone%22,%22background_color%22:%22#ffffff%22,%22theme_color%22:%22#10b981%22}">
 
     <script src="https://cdn.tailwindcss.com"></script>
@@ -20,36 +19,51 @@
         .dark .bg-white { background-color: #1a1a1a; border-color: #2d2d2d; }
         .dark .bg-gray-50 { background-color: #242424; }
         
-        /* Mobile specific spacing for touch */
-        @media (max-width: 768px) {
-            .day-col { h-auto !important; min-height: 400px; }
-            .nav-edge { width: 44px; height: 44px; } /* Bigger touch targets */
-            #sidebar { width: 100% !important; max-width: 100% !important; height: auto !important; border-r-0; border-b: 1px solid #eee; }
-            body { overflow-y: auto; }
+        /* Floating Side Navigation - Fixed & Final */
+        .nav-edge {
+            position: absolute; top: 50%; transform: translateY(-50%);
+            width: 44px; height: 44px; display: flex; align-items: center; justify-content: center;
+            background: white; border: 1px solid #f3f4f6; border-radius: 50%; z-index: 40; cursor: pointer;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08); transition: all 0.2s;
         }
+        .nav-edge:hover { scale: 1.1; border-color: var(--accent); color: var(--accent); }
+        .dark .nav-edge { background: #1a1a1a; border-color: #2d2d2d; }
+        
+        .active-tab { border-bottom: 2px solid var(--accent); color: var(--accent) !important; }
 
-        .current-day { border: 2px solid var(--accent) !important; box-shadow: 0 10px 15px -3px rgba(16, 185, 129, 0.1); }
+        /* Sidebar Logic */
         .collapse-container { display: none; }
         .is-open .collapse-container { display: block; }
         .rotate-icon { transition: transform 0.2s; transform: rotate(-90deg); }
         .is-open .rotate-icon { transform: rotate(0deg); }
 
-        #sidebar { transition: width 0.3s ease-in-out, padding 0.3s, opacity 0.2s; }
+        #sidebar { transition: width 0.3s ease, padding 0.3s, opacity 0.2s; }
         .zen-mode #sidebar { width: 0 !important; padding: 0 !important; opacity: 0; overflow: hidden; pointer-events: none; }
-        
-        #resizer { width: 4px; cursor: col-resize; background: transparent; transition: background 0.2s; z-index: 20; }
+        .zen-mode #resizer { display: none; }
+
+        #resizer { width: 4px; cursor: col-resize; background: transparent; transition: background 0.2s; z-index: 50; }
         #resizer:hover { background: var(--accent); }
+
+        .current-day { border: 2px solid var(--accent) !important; box-shadow: 0 10px 20px -5px rgba(16, 185, 129, 0.15); }
+
+        @media (max-width: 768px) {
+            #sidebar { width: 100% !important; height: auto !important; border-right: 0; border-bottom: 1px solid #eee; }
+            .nav-edge { width: 40px; height: 40px; }
+            .zen-mode #sidebar { height: 0 !important; }
+        }
     </style>
 </head>
-<body class="font-sans min-h-screen flex flex-col md:flex-row overflow-x-hidden select-none">
+<body class="font-sans min-h-screen flex flex-col md:flex-row overflow-hidden select-none">
     <div id="progress-bar" class="fixed top-0 left-0 h-0.5 bg-emerald-500 transition-all duration-700 z-50" style="width: 0%"></div>
 
-    <aside id="sidebar" class="bg-white border-r border-gray-100 p-6 flex flex-col h-screen overflow-y-auto shrink-0" style="width: 300px; min-width: 200px; max-width: 500px;">
+    <aside id="sidebar" class="bg-white border-r border-gray-100 p-6 flex flex-col h-screen overflow-y-auto shrink-0" style="width: 300px;">
         <h1 class="text-2xl font-light tracking-[0.3em] text-gray-300 uppercase mb-10 text-center">Focus</h1>
         
         <div id="section-routines" class="mb-10">
             <div class="flex justify-between items-center cursor-pointer mb-4" onclick="toggleSec('routines')">
-                <h3 class="text-[10px] font-bold text-emerald-500 uppercase tracking-widest flex items-center gap-2"><span class="rotate-icon text-[8px]">▼</span> Routines</h3>
+                <h3 class="text-[10px] font-bold text-emerald-500 uppercase tracking-widest flex items-center gap-2">
+                    <span class="rotate-icon text-[8px]">▼</span> Routines
+                </h3>
             </div>
             <div class="collapse-container">
                 <input type="text" id="routine-input-field" placeholder="Add recurring..." onkeypress="handleRoutineSubmit(event)" class="w-full bg-transparent border-b border-gray-100 mb-4 py-1 text-xs outline-none focus:border-emerald-500">
@@ -59,7 +73,9 @@
 
         <div id="section-someday" class="mb-10">
             <div class="flex justify-between items-center cursor-pointer mb-4" onclick="toggleSec('someday')">
-                <h3 class="text-[10px] font-bold text-gray-400 uppercase tracking-widest italic flex items-center gap-2"><span class="rotate-icon text-[8px]">▼</span> Someday</h3>
+                <h3 class="text-[10px] font-bold text-gray-400 uppercase tracking-widest italic flex items-center gap-2">
+                    <span class="rotate-icon text-[8px]">▼</span> Someday
+                </h3>
             </div>
             <div class="collapse-container">
                 <input type="text" id="someday-input-field" placeholder="New idea..." onkeypress="handleSomedaySubmit(event)" class="w-full bg-transparent border-b border-gray-100 mb-4 py-1 text-xs outline-none">
@@ -69,7 +85,9 @@
 
         <div id="section-projects" class="flex-1 overflow-y-auto">
             <div class="flex justify-between items-center cursor-pointer mb-4" onclick="toggleSec('projects')">
-                <h3 class="text-[10px] font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2"><span class="rotate-icon text-[8px]">▼</span> Projects</h3>
+                <h3 class="text-[10px] font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2">
+                    <span class="rotate-icon text-[8px]">▼</span> Projects
+                </h3>
             </div>
             <div class="collapse-container">
                 <div id="project-list" class="space-y-8" ondragover="allowDrop(event)" ondrop="dropProject(event)"></div>
@@ -88,27 +106,28 @@
     <main class="flex-1 p-6 md:p-12 bg-white overflow-y-auto relative select-text">
         <header class="mb-10 flex justify-between items-center">
             <div class="flex items-center gap-4">
-                <button onclick="toggleZen()" class="p-2 hover:bg-gray-100 rounded-full text-gray-300 hover:text-emerald-500">
+                <button onclick="toggleZen()" title="Zen Mode" class="p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-300 hover:text-emerald-500">
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
                 </button>
-                <p id="week-display" class="text-[10px] md:text-xs font-bold uppercase tracking-[0.2em] cursor-pointer" onclick="goToday()"></p>
+                <p id="week-display" class="text-xs font-bold uppercase tracking-[0.2em] cursor-pointer" onclick="goToday()"></p>
             </div>
-            <div class="flex gap-4 md:gap-6 text-[9px] md:text-[10px] font-bold uppercase tracking-widest text-gray-400">
-                <button onclick="setView('day')" id="btn-day" class="view-btn">Day</button>
-                <button onclick="setView('work')" id="btn-work" class="view-btn">Work</button>
-                <button onclick="setView('full')" id="btn-full" class="view-btn active-tab">Week</button>
+            <div class="flex gap-6 text-[10px] font-bold uppercase tracking-widest text-gray-400">
+                <button onclick="setView('day')" id="btn-day" class="view-btn pb-1">Day</button>
+                <button onclick="setView('work')" id="btn-work" class="view-btn pb-1">Work</button>
+                <button onclick="setView('full')" id="btn-full" class="view-btn pb-1 active-tab">Week</button>
             </div>
         </header>
 
-        <div class="relative">
-            <button onclick="changeWeek(-1)" class="nav-edge -left-2 md:-left-6">←</button>
-            <button onclick="changeWeek(1)" class="nav-edge -right-2 md:-right-6">→</button>
+        <div class="relative min-h-[600px]">
+            <button onclick="changeWeek(-1)" class="nav-edge -left-4 md:-left-8" title="Previous Week">←</button>
+            <button onclick="changeWeek(1)" class="nav-edge -right-4 md:-right-8" title="Next Week">→</button>
+
             <div id="planner-grid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-7 gap-4"></div>
         </div>
     </main>
 
     <script>
-        const STORAGE_KEY = 'focus_pwa_v12';
+        const STORAGE_KEY = 'focus_ultimate_zen_v13';
         let data = JSON.parse(localStorage.getItem(STORAGE_KEY)) || {
             routines: [], projects: [], someday: [], calendar: {},
             ui: { routinesOpen: true, somedayOpen: true, projectsOpen: true, sidebarWidth: 300, zenMode: false }
@@ -119,18 +138,17 @@
         let draggedInfo = null;
         let activeInputId = null;
 
-        // Resizer (Disabled on mobile)
         const resizer = document.getElementById("resizer");
         const sidebar = document.getElementById("sidebar");
         let isResizing = false;
 
-        resizer.addEventListener("mousedown", () => { isResizing = true; });
+        resizer.addEventListener("mousedown", () => { isResizing = true; document.body.style.cursor = "col-resize"; });
         document.addEventListener("mousemove", (e) => {
-            if (!isResizing || window.innerWidth < 768) return;
+            if (!isResizing) return;
             let newWidth = e.clientX;
             if (newWidth > 200 && newWidth < 500) { sidebar.style.width = newWidth + "px"; data.ui.sidebarWidth = newWidth; }
         });
-        document.addEventListener("mouseup", () => { isResizing = false; save(); });
+        document.addEventListener("mouseup", () => { isResizing = false; document.body.style.cursor = "default"; save(); });
 
         const formatDate = (d) => d.toISOString().split('T')[0];
         function getMonday(d) {
@@ -193,17 +211,18 @@
             }
             if (currentView === 'day' && weekDays.length === 0) weekDays.push(new Date());
 
-            grid.className = `grid gap-4 ${currentView === 'day' ? 'grid-cols-1' : currentView === 'work' ? 'md:grid-cols-5' : 'md:grid-cols-7'}`;
+            grid.className = `grid gap-4 ${currentView === 'day' ? 'grid-cols-1 max-w-2xl mx-auto' : currentView === 'work' ? 'md:grid-cols-5' : 'md:grid-cols-7'}`;
 
             weekDays.forEach(d => {
                 const ds = formatDate(d); const tasks = data.calendar[ds] || [];
                 const isToday = ds === todayStr;
                 const col = document.createElement('div');
-                col.className = `day-col flex flex-col bg-white p-5 rounded-sm border border-gray-100 min-h-[500px] md:h-[600px] transition-all relative ${isToday ? 'current-day' : ''}`;
+                col.className = `day-col flex flex-col bg-white p-5 rounded-sm border border-gray-100 min-h-[500px] md:h-[650px] transition-all relative ${isToday ? 'current-day' : ''}`;
                 col.ondragover = allowDrop; col.ondrop = (e) => dropToDay(e, ds);
                 col.innerHTML = `
                     <div class="flex justify-between items-center mb-6 border-b pb-3">
                         <div class="text-[11px] font-black uppercase tracking-widest ${isToday ? 'text-emerald-500' : 'text-gray-400'}">${d.toLocaleDateString('en-US', { weekday: 'long' })} <span class="opacity-30 ml-1 font-mono">${d.getDate()}</span></div>
+                        <span onclick="data.calendar['${ds}']=[];save();render();" class="text-[10px] text-gray-300 cursor-pointer hover:text-red-400 ${tasks.length?'':'hidden'}">✕</span>
                     </div>
                     <div class="flex-1 overflow-y-auto space-y-3 mb-4">${tasks.map((t, i) => {
                         vT++; if(t.completed) vD++;
@@ -227,7 +246,7 @@
 
         function renderSidebar() {
             document.getElementById('routine-list').innerHTML = data.routines.map((r, i) => `<div draggable="true" ondragstart="startDrag(event, 'routine', null, ${i})" class="group flex items-center justify-between text-[11px] p-2 bg-emerald-50/30 border border-emerald-100 rounded-sm mb-1 cursor-grab"><span>${r.text}</span><button onclick="data.routines.splice(${i},1);save();render();" class="opacity-0 group-hover:opacity-100 text-emerald-300">✕</button></div>`).join('');
-            document.getElementById('someday-list').innerHTML = data.someday.map((s, i) => `<div draggable="true" ondragstart="startDrag(event, 'someday', null, ${i})" class="group flex items-center justify-between text-[11px] p-2 bg-white border border-gray-100 rounded-sm mb-1 cursor-grab"><span>${s.text}</span><button onclick="data.someday.splice(${i},1);save();render();" class="opacity-0 group-hover:opacity-100 text-gray-300">✕</button></div>`).join('');
+            document.getElementById('someday-list').innerHTML = data.someday.map((s, i) => `<div draggable="true" ondragstart="startDrag(event, 'someday', null, ${i})" class="group flex items-center justify-between text-[11px] p-2 bg-emerald-50/30 border border-emerald-100 rounded-sm mb-1 cursor-grab"><span>${s.text}</span><button onclick="data.someday.splice(${i},1);save();render();" class="opacity-0 group-hover:opacity-100 text-gray-300">✕</button></div>`).join('');
             document.getElementById('project-list').innerHTML = data.projects.map((p, pIdx) => `
                 <div class="mb-6 p-2 rounded-sm hover:bg-gray-50/50" draggable="true" ondragstart="startProjectDrag(event, ${pIdx})" data-p-idx="${pIdx}">
                     <div class="group flex justify-between items-center mb-2 cursor-move">
@@ -235,7 +254,7 @@
                         <button onclick="data.projects.splice(${pIdx},1);save();render();" class="opacity-0 group-hover:opacity-100 text-gray-300">✕</button>
                     </div>
                     <div class="space-y-1 mb-2">
-                        ${p.tasks.map((t, tIdx) => `<div draggable="true" ondragstart="startDrag(event, 'project-task', pIdx, tIdx)" class="text-[11px] p-2 bg-white shadow-sm border border-gray-100 rounded-sm truncate">${t.text}</div>`).join('')}
+                        ${p.tasks.map((t, tIdx) => `<div draggable="true" ondragstart="startDrag(event, 'project-task', ${pIdx}, ${tIdx})" class="text-[11px] p-2 bg-white shadow-sm border border-gray-100 rounded-sm cursor-grab truncate">${t.text}</div>`).join('')}
                     </div>
                     <input type="text" id="p-in-${pIdx}" placeholder="+" onfocus="activeInputId='p-in-${pIdx}'" onkeypress="if(event.key==='Enter'&&this.value.trim()){data.projects[${pIdx}].tasks.push({text:this.value,completed:false});this.value='';save();render();}" class="w-full bg-transparent text-[10px] outline-none border-b border-gray-100">
                 </div>
