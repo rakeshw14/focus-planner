@@ -18,6 +18,13 @@
         .dark .bg-white { background-color: #1a1a1a; border-color: #2d2d2d; }
         .dark .bg-gray-50 { background-color: #242424; }
         
+        .modal-overlay {
+            display: none; position: fixed; inset: 0; z-index: 3000;
+            background: rgba(255,255,255,0.95); backdrop-filter: blur(8px);
+            align-items: center; justify-content: center;
+        }
+        .dark .modal-overlay { background: rgba(18,18,18,0.95); }
+
         .nav-edge {
             position: absolute; top: 50%; transform: translateY(-50%);
             width: 44px; height: 44px; display: flex; align-items: center; justify-content: center;
@@ -56,10 +63,12 @@
             background: white; flex-direction: column; align-items: center; justify-content: center;
         }
         .dark #focus-overlay { background: #121212; }
-        
         #focus-task-text { color: #111827; }
         .dark #focus-task-text { color: #f3f4f6; }
         
+        @keyframes breath-ring { 0%, 100% { scale: 1; opacity: 0.3; } 50% { scale: 1.5; opacity: 0.1; } }
+        .breath-circle { width: 200px; height: 200px; border: 2px solid var(--accent); border-radius: 50%; position: absolute; animation: breath-ring 8s infinite ease-in-out; }
+
         @keyframes pulse-timer { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
         .timer-running { animation: pulse-timer 2s infinite; }
         .timer-urgent { animation: pulse-timer 0.8s infinite !important; }
@@ -71,16 +80,22 @@
     <div id="progress-bar" class="fixed top-0 left-0 h-0.5 bg-emerald-500 transition-all duration-700 z-50" style="width: 0%"></div>
     <div id="context-menu"></div>
 
+    <div id="health-modal" class="modal-overlay">
+        <div class="text-center relative flex flex-col items-center">
+            <div class="breath-circle"></div>
+            <div class="z-10 bg-white dark:bg-[#121212] p-12 rounded-full shadow-2xl border border-gray-50">
+                <h3 class="text-[10px] font-bold text-emerald-500 uppercase tracking-[0.4em] mb-4">Zen Interrupt</h3>
+                <h2 class="text-2xl font-light text-gray-800 dark:text-gray-100 mb-8">Drink water. Take a breath.</h2>
+                <button onclick="closeHealthModal()" class="px-8 py-3 bg-emerald-500 text-white rounded-full text-[10px] font-bold uppercase tracking-widest hover:bg-emerald-600 transition-all">Resume Work</button>
+            </div>
+        </div>
+    </div>
+
     <div id="focus-overlay">
-        <button onclick="exitFocusMode()" class="absolute top-10 right-10 text-[10px] uppercase tracking-[0.2em] text-gray-400 hover:text-emerald-500 transition-colors">✕ Exit Focus</button>
+        <button onclick="exitFocusMode()" class="absolute top-10 right-10 text-[10px] uppercase tracking-[0.2em] text-gray-400 hover:text-emerald-500">✕ Exit Focus</button>
         <div class="text-center max-w-2xl px-6">
             <h2 id="focus-task-text" class="text-4xl font-semibold mb-12 tracking-tight"></h2>
-            
-            <div id="timer-wrapper-large" class="relative group inline-block mb-12">
-                <div id="focus-timer-large" onclick="editTimerInline('focus-timer-large')" class="text-8xl font-mono font-bold text-emerald-500 cursor-pointer tabular-nums hover:opacity-80 transition-all">25:00</div>
-                <div class="text-[9px] uppercase tracking-[0.3em] text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity absolute -bottom-6 left-1/2 -translate-x-1/2">Click to Adjust</div>
-            </div>
-
+            <div id="focus-timer-large" onclick="editTimerInline('focus-timer-large')" class="text-8xl font-mono font-bold text-emerald-500 cursor-pointer tabular-nums mb-12">25:00</div>
             <div class="flex gap-4 justify-center">
                 <button id="focus-play-btn" onclick="toggleTimer()" class="px-10 py-4 bg-emerald-500 text-white rounded-full text-xs font-bold uppercase tracking-widest hover:bg-emerald-600 transition-all shadow-lg shadow-emerald-500/20">Start Session</button>
                 <button onclick="toggleTaskCompleteFromFocus()" class="px-10 py-4 border border-gray-200 dark:border-gray-800 text-gray-400 rounded-full text-xs font-bold uppercase tracking-widest hover:border-emerald-500 hover:text-emerald-500 transition-all">Mark Done</button>
@@ -160,17 +175,14 @@
             ui: { routinesOpen: true, somedayOpen: true, projectsOpen: true, sidebarWidth: 300, zenMode: false, defaultTimer: 25 }
         };
 
-        if (!data.ui.defaultTimer || isNaN(data.ui.defaultTimer)) data.ui.defaultTimer = 25;
-
         let startOfWeek = getMonday(new Date());
         let currentView = 'full';
-        let activeInputId = null;
         let timerSeconds = data.ui.defaultTimer * 60;
         let timerInterval = null;
         let blinkInterval = null;
+        let activeInputId = null;
         let focusTask = null;
 
-        // Reset alert when user returns to tab
         window.onfocus = () => { if(blinkInterval) stopBlinking(); };
 
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -185,21 +197,35 @@
             } catch(e) {}
         }
 
+        // --- UPDATED TIMER LOGIC ---
         function toggleTimer() {
-            const icons = ['<polygon points="5 3 19 12 5 21 5 3"></polygon>', '<rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect>'];
+            const timerIcon = document.getElementById('timer-icon');
+            const focusBtn = document.getElementById('focus-play-btn');
+            const playIcon = '<polygon points="5 3 19 12 5 21 5 3"></polygon>';
+            const pauseIcon = '<rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect>';
+
             if (timerInterval) {
-                clearInterval(timerInterval); timerInterval = null;
-                document.getElementById('timer-icon').innerHTML = icons[0];
-                if(document.getElementById('focus-play-btn')) document.getElementById('focus-play-btn').innerText = "Resume Session";
+                // STOPPING
+                clearInterval(timerInterval);
+                timerInterval = null;
+                timerIcon.innerHTML = playIcon;
+                if(focusBtn) focusBtn.innerText = "Resume Session";
                 document.title = "Focus | Zen Infinite";
             } else {
-                document.getElementById('timer-icon').innerHTML = icons[1];
-                if(document.getElementById('focus-play-btn')) document.getElementById('focus-play-btn').innerText = "Pause Session";
+                // STARTING
+                timerIcon.innerHTML = pauseIcon;
+                if(focusBtn) focusBtn.innerText = "Pause Session";
                 timerInterval = setInterval(() => {
-                    if(timerSeconds > 0) { timerSeconds--; updateTimerDisplay(); updateTimerVisuals(); }
-                    else { 
-                        clearInterval(timerInterval); timerInterval = null; 
-                        playSound(880, 'sine', 0.5); 
+                    if(timerSeconds > 0) {
+                        timerSeconds--;
+                        updateTimerDisplay();
+                        updateTimerVisuals();
+                    } else {
+                        clearInterval(timerInterval);
+                        timerInterval = null;
+                        timerIcon.innerHTML = playIcon;
+                        if(focusBtn) focusBtn.innerText = "Start Session";
+                        playSound(880, 'sine', 0.5);
                         startBlinking();
                     }
                 }, 1000);
@@ -207,28 +233,16 @@
             updateTimerVisuals();
         }
 
-        function startBlinking() {
-            if(blinkInterval) return;
-            let showMsg = true;
-            blinkInterval = setInterval(() => {
-                document.title = showMsg ? "!!! DONE !!!" : "Check Focus";
-                showMsg = !showMsg;
-            }, 1000);
-        }
-
-        function stopBlinking() {
-            clearInterval(blinkInterval);
-            blinkInterval = null;
-            document.title = "Focus | Zen Infinite";
-        }
+        function startBlinking() { if(!blinkInterval) { let msg = true; blinkInterval = setInterval(() => { document.title = msg ? "!!! DONE !!!" : "Check Focus"; msg = !msg; }, 1000); } }
+        function stopBlinking() { clearInterval(blinkInterval); blinkInterval = null; document.title = "Focus | Zen Infinite"; }
 
         function updateTimerVisuals() {
             const display = document.getElementById('timer-display');
             const largeDisplay = document.getElementById('focus-timer-large');
             const color = timerSeconds <= 60 ? '#ef4444' : timerSeconds <= 300 ? '#f59e0b' : '#10b981';
+            const anim = timerSeconds <= 60 ? 'timer-urgent' : 'timer-running';
             
             if (timerInterval) {
-                const anim = timerSeconds <= 60 ? 'timer-urgent' : 'timer-running';
                 display.className = `text-xs font-mono font-bold tracking-widest cursor-pointer ${anim}`;
                 largeDisplay.className = `text-8xl font-mono font-bold cursor-pointer tabular-nums ${anim}`;
                 display.style.color = color;
@@ -243,7 +257,7 @@
 
         function updateTimerDisplay() {
             const m = Math.floor(timerSeconds / 60); const s = timerSeconds % 60;
-            const str = `${isNaN(m) ? 25 : m}:${s < 10 ? '0' : ''}${isNaN(s) ? 0 : s}`;
+            const str = `${m}:${s < 10 ? '0' : ''}${s}`;
             document.getElementById('timer-display').innerText = str;
             document.getElementById('focus-timer-large').innerText = str;
             if (timerInterval) document.title = `(${str}) Focus`;
@@ -253,44 +267,37 @@
             if(timerInterval) toggleTimer();
             timerSeconds = data.ui.defaultTimer * 60;
             focusTask = { ds, idx };
-            const task = data.calendar[ds][idx];
-            document.getElementById('focus-task-text').innerText = task.text;
+            document.getElementById('focus-task-text').innerText = data.calendar[ds][idx].text;
             document.getElementById('focus-overlay').style.display = 'flex';
             document.getElementById('focus-play-btn').innerText = "Start Session";
             updateTimerDisplay();
             updateTimerVisuals();
         }
 
-        function exitFocusMode() {
-            document.getElementById('focus-overlay').style.display = 'none';
-            if(timerInterval) toggleTimer();
-            stopBlinking();
-            focusTask = null;
-        }
-
-        function toggleTaskCompleteFromFocus() {
-            if(!focusTask) return;
-            toggleTaskComplete(focusTask.ds, focusTask.idx);
-            setTimeout(exitFocusMode, 600);
-        }
+        function exitFocusMode() { document.getElementById('focus-overlay').style.display = 'none'; if(timerInterval) toggleTimer(); stopBlinking(); focusTask = null; }
+        function toggleTaskCompleteFromFocus() { if(!focusTask) return; toggleTaskComplete(focusTask.ds, focusTask.idx); setTimeout(exitFocusMode, 600); }
 
         function editTimerInline(id) {
             if (timerInterval) return;
             const display = document.getElementById(id);
             const input = document.createElement('input');
             input.value = Math.floor(timerSeconds / 60);
-            const sizeClass = id === 'focus-timer-large' ? "text-8xl w-64" : "text-xs w-10";
-            input.className = `bg-transparent border-b-2 border-emerald-500 outline-none font-mono font-bold text-emerald-500 text-center ${sizeClass}`;
+            input.className = "bg-transparent border-b-2 border-emerald-500 outline-none font-mono text-center " + (id === 'focus-timer-large' ? 'text-8xl w-64' : 'text-xs w-10');
             display.style.display = 'none';
             display.parentNode.insertBefore(input, display);
             input.focus(); input.select();
-            const finalize = () => {
-                const val = parseInt(input.value); 
+            input.onblur = () => {
+                const val = parseInt(input.value);
                 if (!isNaN(val) && val > 0) { timerSeconds = val * 60; data.ui.defaultTimer = val; save(); }
                 input.remove(); display.style.display = 'inline-block'; updateTimerDisplay(); updateTimerVisuals();
             };
-            input.onblur = finalize; input.onkeydown = (e) => { if(e.key === 'Enter') finalize(); };
         }
+
+        // --- HEALTH MODAL LOGIC ---
+        let lastHealthCheck = Date.now();
+        setInterval(() => { if (Date.now() - lastHealthCheck > 3600000) openHealthModal(); }, 10000);
+        function openHealthModal() { document.getElementById('health-modal').style.display = 'flex'; playSound(440, 'triangle', 0.5); document.title = "!!! ZEN BREAK !!!"; }
+        function closeHealthModal() { document.getElementById('health-modal').style.display = 'none'; lastHealthCheck = Date.now(); document.title = "Focus | Zen Infinite"; playSound(880, 'sine', 0.1); }
 
         function save() { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); }
         function toggleTheme() { document.body.classList.toggle('dark'); }
@@ -305,10 +312,9 @@
             e.preventDefault(); e.stopPropagation();
             const menu = document.getElementById('context-menu');
             menu.style.display = 'block'; menu.style.left = `${e.pageX}px`; menu.style.top = `${e.pageY}px`;
-            let html = '';
-            if (type === 'calendar') html += `<div class="menu-item font-bold text-emerald-600" onclick="enterFocusMode('${src}', ${idx})">Start Focus Session</div>`;
+            let html = `<div class="menu-item" onclick="inlineEditFromMenu('${type}', '${src}', ${idx})">Rename</div>`;
+            if (type === 'calendar') html = `<div class="menu-item font-bold text-emerald-600" onclick="enterFocusMode('${src}', ${idx})">Focus Session</div>` + html;
             if (type === 'project-task') html += `<div class="menu-item" onclick="scheduleProjectTask(${src}, ${idx})">Move to Today</div>`;
-            html += `<div class="menu-item" onclick="inlineEditFromMenu('${type}', '${src}', ${idx})">Rename</div>`;
             menu.innerHTML = html; window.activeContextElement = element;
         }
         function hideMenu() { document.getElementById('context-menu').style.display = 'none'; }
@@ -322,28 +328,20 @@
 
         function inlineEditFromMenu(type, src, idx) {
             hideMenu();
-            if(window.activeContextElement) inlineEdit({target: window.activeContextElement, stopPropagation: () => {}}, type, src, idx);
-        }
-
-        function inlineEdit(e, type, src, idx) {
-            const element = e.target; e.stopPropagation();
-            const currentText = (type === 'project-name') ? data.projects[idx].name : element.innerText;
+            const el = window.activeContextElement;
+            const currentText = (type === 'project-name') ? data.projects[idx].name : el.innerText;
             const input = document.createElement('input');
-            input.value = currentText; input.className = "bg-transparent border-b border-emerald-500 outline-none w-full text-inherit font-inherit";
-            const originalContent = element.innerHTML;
-            element.innerHTML = ''; element.appendChild(input); input.focus(); input.select();
-            const saveAction = () => {
-                const newText = input.value.trim();
-                if (newText && newText !== currentText) {
-                    if (type === 'calendar') data.calendar[src][idx].text = newText;
-                    else if (type === 'routines') data.routines[idx].text = newText;
-                    else if (type === 'someday') data.someday[idx].text = newText;
-                    else if (type === 'project-task') data.projects[src].tasks[idx].text = newText;
-                    else if (type === 'project-name') data.projects[idx].name = newText;
+            input.value = currentText; input.className = "bg-transparent border-b border-emerald-500 outline-none w-full";
+            const old = el.innerHTML; el.innerHTML = ''; el.appendChild(input); input.focus();
+            input.onblur = () => {
+                const nt = input.value.trim();
+                if(nt && nt !== currentText) {
+                    if (type === 'calendar') data.calendar[src][idx].text = nt;
+                    else if (type === 'routines') data.routines[idx].text = nt;
+                    else if (type === 'project-name') data.projects[idx].name = nt;
                     save(); render();
-                } else { element.innerHTML = originalContent; }
+                } else el.innerHTML = old;
             };
-            input.onblur = saveAction; input.onkeydown = (ev) => { if (ev.key === 'Enter') saveAction(); };
         }
 
         function rolloverTasks() {
@@ -361,16 +359,10 @@
             save();
         }
 
-        function toggleTaskComplete(ds, idx) {
-            data.calendar[ds][idx].completed = !data.calendar[ds][idx].completed;
-            if(data.calendar[ds][idx].completed) playSound(660, 'sine', 0.1);
-            save(); render();
-        }
-
+        function toggleTaskComplete(ds, idx) { data.calendar[ds][idx].completed = !data.calendar[ds][idx].completed; if(data.calendar[ds][idx].completed) playSound(660, 'sine', 0.1); save(); render(); }
         function togglePriority(ds, idx, e) { e.stopPropagation(); data.calendar[ds][idx].priority = !data.calendar[ds][idx].priority; save(); render(); }
         function allowDrop(e) { e.preventDefault(); }
         function startDrag(e, type, src, idx) { e.stopPropagation(); draggedInfo = { type, src, idx }; }
-        
         function dropToDay(e, toDS) {
             e.preventDefault(); if(!draggedInfo) return;
             let t; const { type, src, idx } = draggedInfo;
@@ -394,17 +386,15 @@
         }
 
         function applyUI() {
+            document.body.classList.toggle('zen-mode', data.ui.zenMode);
             document.getElementById('section-routines').classList.toggle('is-open', data.ui.routinesOpen);
             document.getElementById('section-someday').classList.toggle('is-open', data.ui.somedayOpen);
             document.getElementById('section-projects').classList.toggle('is-open', data.ui.projectsOpen);
-            document.body.classList.toggle('zen-mode', data.ui.zenMode);
-            const s = document.getElementById('sidebar');
-            if(s) s.style.width = data.ui.sidebarWidth + "px";
+            if (!data.ui.zenMode && window.innerWidth > 768) document.getElementById('sidebar').style.width = data.ui.sidebarWidth + "px";
         }
 
         function render() {
             const grid = document.getElementById('planner-grid');
-            if(!grid) return;
             grid.innerHTML = '';
             const todayStr = formatDate(new Date());
             const weekDays = [];
@@ -423,14 +413,12 @@
                 let tasks = data.calendar[ds] || [];
                 const sorted = tasks.map((t, i) => ({...t, originalIdx: i})).sort((a, b) => (b.priority ? 1 : 0) - (a.priority ? 1 : 0));
                 const col = document.createElement('div');
-                col.className = `day-col flex flex-col bg-white p-5 rounded-sm border border-gray-100 min-h-[500px] relative ${ds === todayStr ? 'current-day' : ''}`;
+                col.className = `p-5 bg-white rounded-sm border ${ds === todayStr ? 'current-day' : 'border-gray-100'} min-h-[400px]`;
                 col.ondragover = allowDrop; col.ondrop = (e) => dropToDay(e, ds);
                 col.innerHTML = `
-                    <div class="flex justify-between items-center mb-6 border-b pb-3 text-[11px] font-black uppercase tracking-widest">
-                        <div class="${ds === todayStr ? 'text-emerald-500' : 'text-gray-400'}">${d.toLocaleDateString('en-US', { weekday: 'long' })} <span class="opacity-30 ml-1 font-mono">${d.getDate()}</span></div>
-                    </div>
-                    <input type="text" id="in-${ds}" placeholder="+" onfocus="activeInputId='in-${ds}'" onkeypress="if(event.key==='Enter'&&this.value.trim()){if(!data.calendar['${ds}'])data.calendar['${ds}']=[];data.calendar['${ds}'].push({text:this.value,completed:false,priority:false});this.value='';save();render();}" class="w-full bg-transparent border-b border-gray-50 pb-4 mb-4 text-xs outline-none">
-                    <div class="space-y-3">${sorted.map(t => `<div draggable="true" ondragstart="startDrag(event, 'calendar', '${ds}', ${t.originalIdx})" oncontextmenu="showContextMenu(event, 'calendar', '${ds}', ${t.originalIdx}, this.querySelector('.task-text'))" class="group flex items-center justify-between text-xs p-3 bg-gray-50 rounded-sm cursor-move border-l-2 ${t.priority ? 'priority-task' : (t.isRoutine ? 'border-emerald-400' : 'border-transparent')}">
+                    <div class="mb-4 text-[10px] font-bold uppercase tracking-widest ${ds === todayStr ? 'text-emerald-500' : 'text-gray-400'}">${d.toLocaleDateString('en-US', { weekday: 'long' })} <span class="opacity-30 ml-1 font-mono">${d.getDate()}</span></div>
+                    <input type="text" id="in-${ds}" onfocus="activeInputId='in-${ds}'" onkeypress="if(event.key==='Enter'&&this.value.trim()){if(!data.calendar['${ds}'])data.calendar['${ds}']=[];data.calendar['${ds}'].push({text:this.value,completed:false});this.value='';save();render();}" class="w-full bg-transparent border-b mb-4 py-1 text-xs outline-none">
+                    <div class="space-y-2">${sorted.map(t => `<div draggable="true" ondragstart="startDrag(event, 'calendar', '${ds}', ${t.originalIdx})" oncontextmenu="showContextMenu(event, 'calendar', '${ds}', ${t.originalIdx}, this.querySelector('.task-text'))" class="group flex items-center justify-between text-xs p-3 bg-gray-50 rounded-sm cursor-move border-l-2 ${t.priority ? 'priority-task' : 'border-transparent'}">
                         <span onclick="togglePriority('${ds}', ${t.originalIdx}, event)" class="star-icon mr-2 text-[14px] ${t.priority ? 'star-active' : ''}">${t.priority ? '★' : '☆'}</span>
                         <span onclick="toggleTaskComplete('${ds}', ${t.originalIdx})" class="task-text cursor-pointer flex-1 ${t.completed ? 'done' : ''}">${t.text}</span>
                         <button onclick="data.calendar['${ds}'].splice(${t.originalIdx},1);save();render();" class="opacity-0 group-hover:opacity-100 text-gray-300 ml-2">✕</button>
@@ -438,26 +426,24 @@
                 `;
                 grid.appendChild(col);
             });
-            document.getElementById('week-display').innerText = `${startOfWeek.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} — ${new Date(new Date(startOfWeek).setDate(startOfWeek.getDate()+6)).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
-            renderSidebar(); applyUI(); updateTimerDisplay(); updateTimerVisuals();
+            renderSidebar(); applyUI();
             if (activeInputId && document.getElementById(activeInputId)) document.getElementById(activeInputId).focus();
         }
 
         function renderSidebar() {
-            document.getElementById('routine-list').innerHTML = data.routines.map((r, i) => `<div draggable="true" ondragstart="startDrag(event, 'routine', null, ${i})" oncontextmenu="showContextMenu(event, 'routines', null, ${i}, this.querySelector('span'))" class="group flex items-center justify-between text-[11px] p-2 bg-emerald-50/30 border border-emerald-100 rounded-sm mb-1 cursor-grab"><span>${r.text}</span><button onclick="data.routines.splice(${i},1);save();render();" class="opacity-0 group-hover:opacity-100 text-emerald-300">✕</button></div>`).join('');
-            document.getElementById('someday-list').innerHTML = data.someday.map((s, i) => `<div draggable="true" ondragstart="startDrag(event, 'someday', null, ${i})" oncontextmenu="showContextMenu(event, 'someday', null, ${i}, this.querySelector('span'))" class="group flex items-center justify-between text-[11px] p-2 bg-emerald-50/30 border border-emerald-100 rounded-sm mb-1 cursor-grab"><span>${s.text}</span><button onclick="data.someday.splice(${i},1);save();render();" class="opacity-0 group-hover:opacity-100 text-gray-300">✕</button></div>`).join('');
-            document.getElementById('project-list').innerHTML = data.projects.map((p, pIdx) => `<div class="mb-6 p-2 rounded-sm hover:bg-gray-50/50" draggable="true" ondragstart="startDrag(event, 'project-task', ${pIdx}, 0)" ondragover="allowDrop(event)" ondrop="dropToProjectSection(event)" data-p-idx="${pIdx}">
-                <div class="group flex justify-between items-center mb-2 cursor-move"><span class="text-[10px] font-bold text-gray-400 uppercase tracking-widest" ondblclick="inlineEdit(event, 'project-name', null, ${pIdx})">⠿ ${p.name}</span><button onclick="if(confirm('Delete project?')){data.projects.splice(${pIdx},1);save();render();}" class="opacity-0 group-hover:opacity-100 text-gray-300">✕</button></div>
-                <div class="space-y-1 mb-2">${p.tasks.map((t, tIdx) => `<div draggable="true" ondragstart="startDrag(event, 'project-task', ${pIdx}, ${tIdx})" oncontextmenu="showContextMenu(event, 'project-task', ${pIdx}, ${tIdx}, this.querySelector('span'))" class="group flex items-center justify-between text-[11px] p-2 bg-white shadow-sm border border-gray-100 rounded-sm cursor-grab"><span class="truncate flex-1 hover:text-emerald-500 cursor-pointer">${t.text}</span><button onclick="data.projects[${pIdx}].tasks.splice(${tIdx},1);save();render();" class="opacity-0 group-hover:opacity-100 text-gray-300 ml-2">✕</button></div>`).join('')}</div>
-                <input type="text" id="p-in-${pIdx}" placeholder="+" onfocus="activeInputId='p-in-${pIdx}'" onkeypress="if(event.key==='Enter'&&this.value.trim()){data.projects[${pIdx}].tasks.push({text:this.value,completed:false,priority:false});this.value='';save();render();}" class="w-full bg-transparent text-[10px] outline-none border-b border-gray-100"></div>`).join('');
+            document.getElementById('routine-list').innerHTML = data.routines.map((r, i) => `<div draggable="true" ondragstart="startDrag(event, 'routine', null, i)" oncontextmenu="showContextMenu(event, 'routines', null, i, this.querySelector('span'))" class="text-[11px] p-2 bg-emerald-50/30 rounded-sm mb-1 cursor-grab"><span>${r.text}</span></div>`).join('');
+            document.getElementById('project-list').innerHTML = data.projects.map((p, pIdx) => `<div class="mb-6 p-2 rounded-sm hover:bg-gray-50/50" ondragover="allowDrop(event)" ondrop="dropToProjectSection(event)" data-p-idx="${pIdx}">
+                <div class="group flex justify-between items-center mb-2"><span class="text-[10px] font-bold text-gray-400 uppercase tracking-widest" oncontextmenu="showContextMenu(event, 'project-name', null, ${pIdx}, this)">⠿ ${p.name}</span><button onclick="if(confirm('Delete project?')){data.projects.splice(${pIdx},1);save();render();}" class="opacity-0 group-hover:opacity-100 text-gray-300">✕</button></div>
+                <div class="space-y-1 mb-2">${p.tasks.map((t, tIdx) => `<div draggable="true" ondragstart="startDrag(event, 'project-task', ${pIdx}, ${tIdx})" oncontextmenu="showContextMenu(event, 'project-task', ${pIdx}, ${tIdx}, this.querySelector('span'))" class="text-[11px] p-2 bg-white border rounded-sm cursor-grab"><span>${t.text}</span></div>`).join('')}</div>
+                <input type="text" placeholder="+" onkeypress="if(event.key==='Enter'&&this.value.trim()){data.projects[${pIdx}].tasks.push({text:this.value,completed:false});this.value='';save();render();}" class="w-full bg-transparent text-[10px] outline-none border-b"></div>`).join('');
         }
 
-        function handleRoutineSubmit(e) { if(e.key==='Enter' && e.target.value.trim()){ data.routines.push({text:e.target.value}); e.target.value=''; render(); save(); }}
-        function handleSomedaySubmit(e) { if(e.key==='Enter' && e.target.value.trim()){ data.someday.push({text:e.target.value, completed:false}); e.target.value=''; render(); save(); }}
-        function handleProjectSubmit(e) { if(e.key==='Enter' && e.target.value.trim()){ data.projects.push({name:e.target.value, tasks:[]}); e.target.value=''; render(); save(); }}
+        function handleRoutineSubmit(e) { if(e.key==='Enter' && e.target.value.trim()){ data.routines.push({text:e.target.value}); e.target.value=''; save(); render(); }}
+        function handleSomedaySubmit(e) { if(e.key==='Enter' && e.target.value.trim()){ data.someday.push({text:e.target.value}); e.target.value=''; save(); render(); }}
+        function handleProjectSubmit(e) { if(e.key==='Enter' && e.target.value.trim()){ data.projects.push({name:e.target.value, tasks:[]}); e.target.value=''; save(); render(); }}
         function exportData() { const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([JSON.stringify(data)], {type:'application/json'})); a.download=`focus-backup.json`; a.click(); }
         
-        window.onload = () => { if(new Date().getHours() >= 19 || new Date().getHours() < 7) document.body.classList.add('dark'); rolloverTasks(); render(); }
+        window.onload = () => { rolloverTasks(); render(); }
     </script>
 </body>
 </html>
