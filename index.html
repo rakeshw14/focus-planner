@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Focus | Zen Infinite</title>
+    
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#10b981">
+    
+    <link rel="manifest" href="data:application/manifest+json,{%22name%22:%22Focus%20Infinite%22,%22short_name%22:%22Focus%22,%22start_url%22:%22.%22,%22display%22:%22standalone%22,%22background_color%22:%22#ffffff%22,%22theme_color%22:%22#10b981%22}">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        :root { --accent: #10b981; }
+        .done { text-decoration: line-through; opacity: 0.2; filter: grayscale(1); }
+        body { transition: background-color 0.5s, color 0.5s; -webkit-tap-highlight-color: transparent; }
+        .dark { background-color: #121212; color: #e5e7eb; }
+        .dark .bg-white { background-color: #1a1a1a; border-color: #2d2d2d; }
+        .dark .bg-gray-50 { background-color: #242424; }
+        
+        /* Mobile specific spacing for touch */
+        @media (max-width: 768px) {
+            .day-col { h-auto !important; min-height: 400px; }
+            .nav-edge { width: 44px; height: 44px; } /* Bigger touch targets */
+            #sidebar { width: 100% !important; max-width: 100% !important; height: auto !important; border-r-0; border-b: 1px solid #eee; }
+            body { overflow-y: auto; }
+        }
+
+        .current-day { border: 2px solid var(--accent) !important; box-shadow: 0 10px 15px -3px rgba(16, 185, 129, 0.1); }
+        .collapse-container { display: none; }
+        .is-open .collapse-container { display: block; }
+        .rotate-icon { transition: transform 0.2s; transform: rotate(-90deg); }
+        .is-open .rotate-icon { transform: rotate(0deg); }
+
+        #sidebar { transition: width 0.3s ease-in-out, padding 0.3s, opacity 0.2s; }
+        .zen-mode #sidebar { width: 0 !important; padding: 0 !important; opacity: 0; overflow: hidden; pointer-events: none; }
+        
+        #resizer { width: 4px; cursor: col-resize; background: transparent; transition: background 0.2s; z-index: 20; }
+        #resizer:hover { background: var(--accent); }
+    </style>
+</head>
+<body class="font-sans min-h-screen flex flex-col md:flex-row overflow-x-hidden select-none">
+    <div id="progress-bar" class="fixed top-0 left-0 h-0.5 bg-emerald-500 transition-all duration-700 z-50" style="width: 0%"></div>
+
+    <aside id="sidebar" class="bg-white border-r border-gray-100 p-6 flex flex-col h-screen overflow-y-auto shrink-0" style="width: 300px; min-width: 200px; max-width: 500px;">
+        <h1 class="text-2xl font-light tracking-[0.3em] text-gray-300 uppercase mb-10 text-center">Focus</h1>
+        
+        <div id="section-routines" class="mb-10">
+            <div class="flex justify-between items-center cursor-pointer mb-4" onclick="toggleSec('routines')">
+                <h3 class="text-[10px] font-bold text-emerald-500 uppercase tracking-widest flex items-center gap-2"><span class="rotate-icon text-[8px]">▼</span> Routines</h3>
+            </div>
+            <div class="collapse-container">
+                <input type="text" id="routine-input-field" placeholder="Add recurring..." onkeypress="handleRoutineSubmit(event)" class="w-full bg-transparent border-b border-gray-100 mb-4 py-1 text-xs outline-none focus:border-emerald-500">
+                <div id="routine-list" class="space-y-2"></div>
+            </div>
+        </div>
+
+        <div id="section-someday" class="mb-10">
+            <div class="flex justify-between items-center cursor-pointer mb-4" onclick="toggleSec('someday')">
+                <h3 class="text-[10px] font-bold text-gray-400 uppercase tracking-widest italic flex items-center gap-2"><span class="rotate-icon text-[8px]">▼</span> Someday</h3>
+            </div>
+            <div class="collapse-container">
+                <input type="text" id="someday-input-field" placeholder="New idea..." onkeypress="handleSomedaySubmit(event)" class="w-full bg-transparent border-b border-gray-100 mb-4 py-1 text-xs outline-none">
+                <div id="someday-list" class="space-y-2"></div>
+            </div>
+        </div>
+
+        <div id="section-projects" class="flex-1 overflow-y-auto">
+            <div class="flex justify-between items-center cursor-pointer mb-4" onclick="toggleSec('projects')">
+                <h3 class="text-[10px] font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2"><span class="rotate-icon text-[8px]">▼</span> Projects</h3>
+            </div>
+            <div class="collapse-container">
+                <div id="project-list" class="space-y-8" ondragover="allowDrop(event)" ondrop="dropProject(event)"></div>
+                <input type="text" id="project-master-name-input" placeholder="New project..." onkeypress="handleProjectSubmit(event)" class="w-full bg-transparent border-b border-gray-100 py-1 mt-6 text-xs outline-none focus:border-emerald-300">
+            </div>
+        </div>
+
+        <div class="mt-auto pt-6 border-t border-gray-100 flex justify-between">
+            <button onclick="toggleTheme()" class="text-[9px] uppercase tracking-widest text-gray-400 hover:text-emerald-500">Theme</button>
+            <button onclick="exportData()" class="text-[9px] uppercase tracking-widest text-gray-400 hover:text-emerald-500">Backup</button>
+        </div>
+    </aside>
+
+    <div id="resizer" class="hidden md:block"></div>
+
+    <main class="flex-1 p-6 md:p-12 bg-white overflow-y-auto relative select-text">
+        <header class="mb-10 flex justify-between items-center">
+            <div class="flex items-center gap-4">
+                <button onclick="toggleZen()" class="p-2 hover:bg-gray-100 rounded-full text-gray-300 hover:text-emerald-500">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+                </button>
+                <p id="week-display" class="text-[10px] md:text-xs font-bold uppercase tracking-[0.2em] cursor-pointer" onclick="goToday()"></p>
+            </div>
+            <div class="flex gap-4 md:gap-6 text-[9px] md:text-[10px] font-bold uppercase tracking-widest text-gray-400">
+                <button onclick="setView('day')" id="btn-day" class="view-btn">Day</button>
+                <button onclick="setView('work')" id="btn-work" class="view-btn">Work</button>
+                <button onclick="setView('full')" id="btn-full" class="view-btn active-tab">Week</button>
+            </div>
+        </header>
+
+        <div class="relative">
+            <button onclick="changeWeek(-1)" class="nav-edge -left-2 md:-left-6">←</button>
+            <button onclick="changeWeek(1)" class="nav-edge -right-2 md:-right-6">→</button>
+            <div id="planner-grid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-7 gap-4"></div>
+        </div>
+    </main>
+
+    <script>
+        const STORAGE_KEY = 'focus_pwa_v12';
+        let data = JSON.parse(localStorage.getItem(STORAGE_KEY)) || {
+            routines: [], projects: [], someday: [], calendar: {},
+            ui: { routinesOpen: true, somedayOpen: true, projectsOpen: true, sidebarWidth: 300, zenMode: false }
+        };
+
+        let startOfWeek = getMonday(new Date());
+        let currentView = 'full';
+        let draggedInfo = null;
+        let activeInputId = null;
+
+        // Resizer (Disabled on mobile)
+        const resizer = document.getElementById("resizer");
+        const sidebar = document.getElementById("sidebar");
+        let isResizing = false;
+
+        resizer.addEventListener("mousedown", () => { isResizing = true; });
+        document.addEventListener("mousemove", (e) => {
+            if (!isResizing || window.innerWidth < 768) return;
+            let newWidth = e.clientX;
+            if (newWidth > 200 && newWidth < 500) { sidebar.style.width = newWidth + "px"; data.ui.sidebarWidth = newWidth; }
+        });
+        document.addEventListener("mouseup", () => { isResizing = false; save(); });
+
+        const formatDate = (d) => d.toISOString().split('T')[0];
+        function getMonday(d) {
+            d = new Date(d); let day = d.getDay(), diff = d.getDate() - day + (day == 0 ? -6 : 1);
+            return new Date(d.setDate(diff));
+        }
+
+        function save() { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); }
+        function toggleTheme() { document.body.classList.toggle('dark'); }
+        function toggleZen() { data.ui.zenMode = !data.ui.zenMode; save(); applyUI(); }
+        function changeWeek(dir) { startOfWeek.setDate(startOfWeek.getDate() + (dir * 7)); render(); }
+        function goToday() { startOfWeek = getMonday(new Date()); render(); }
+        function setView(view) { currentView = view; render(); }
+        function toggleSec(sec) { const key = sec + 'Open'; data.ui[key] = !data.ui[key]; save(); render(); }
+        
+        function applyUI() {
+            document.getElementById('section-routines').classList.toggle('is-open', data.ui.routinesOpen);
+            document.getElementById('section-someday').classList.toggle('is-open', data.ui.somedayOpen);
+            document.getElementById('section-projects').classList.toggle('is-open', data.ui.projectsOpen);
+            document.body.classList.toggle('zen-mode', data.ui.zenMode);
+            if (!data.ui.zenMode && window.innerWidth > 768) sidebar.style.width = data.ui.sidebarWidth + "px";
+        }
+
+        function allowDrop(e) { e.preventDefault(); }
+        function startDrag(e, type, src, idx) { e.stopPropagation(); draggedInfo = { type, src, idx }; }
+        function startProjectDrag(e, idx) { draggedInfo = { type: 'reorder-p', idx }; }
+        
+        function dropProject(e) {
+            e.preventDefault(); if(!draggedInfo || draggedInfo.type !== 'reorder-p') return;
+            const target = e.target.closest('[data-p-idx]');
+            if(!target) return;
+            const to = parseInt(target.getAttribute('data-p-idx'));
+            const p = data.projects.splice(draggedInfo.idx, 1)[0];
+            data.projects.splice(to, 0, p);
+            draggedInfo = null; save(); render();
+        }
+
+        function dropToDay(e, toDS) {
+            e.preventDefault(); if(!draggedInfo) return;
+            let t; const { type, src, idx } = draggedInfo;
+            if(type === 'routine') t = { text: data.routines[idx].text, completed: false, isRoutine: true };
+            else if(type === 'someday') t = data.someday.splice(idx, 1)[0];
+            else if(type === 'calendar') t = data.calendar[src].splice(idx, 1)[0];
+            else if(type === 'project-task') t = data.projects[src].tasks.splice(idx, 1)[0];
+            if(t) { if(!data.calendar[toDS]) data.calendar[toDS] = []; data.calendar[toDS].push(t); save(); render(); }
+            draggedInfo = null;
+        }
+
+        function render() {
+            const grid = document.getElementById('planner-grid');
+            grid.innerHTML = '';
+            let vT = 0, vD = 0; const todayStr = formatDate(new Date());
+            const weekDays = [];
+            for(let i=0; i<7; i++) {
+                let d = new Date(startOfWeek); d.setDate(d.getDate() + i);
+                const ds = formatDate(d);
+                if (currentView === 'day' && ds !== todayStr) continue;
+                if (currentView === 'work' && (d.getDay() === 0 || d.getDay() === 6)) continue;
+                weekDays.push(d);
+            }
+            if (currentView === 'day' && weekDays.length === 0) weekDays.push(new Date());
+
+            grid.className = `grid gap-4 ${currentView === 'day' ? 'grid-cols-1' : currentView === 'work' ? 'md:grid-cols-5' : 'md:grid-cols-7'}`;
+
+            weekDays.forEach(d => {
+                const ds = formatDate(d); const tasks = data.calendar[ds] || [];
+                const isToday = ds === todayStr;
+                const col = document.createElement('div');
+                col.className = `day-col flex flex-col bg-white p-5 rounded-sm border border-gray-100 min-h-[500px] md:h-[600px] transition-all relative ${isToday ? 'current-day' : ''}`;
+                col.ondragover = allowDrop; col.ondrop = (e) => dropToDay(e, ds);
+                col.innerHTML = `
+                    <div class="flex justify-between items-center mb-6 border-b pb-3">
+                        <div class="text-[11px] font-black uppercase tracking-widest ${isToday ? 'text-emerald-500' : 'text-gray-400'}">${d.toLocaleDateString('en-US', { weekday: 'long' })} <span class="opacity-30 ml-1 font-mono">${d.getDate()}</span></div>
+                    </div>
+                    <div class="flex-1 overflow-y-auto space-y-3 mb-4">${tasks.map((t, i) => {
+                        vT++; if(t.completed) vD++;
+                        return `<div draggable="true" ondragstart="startDrag(event, 'calendar', '${ds}', ${i})" class="group flex items-center justify-between text-xs p-3 bg-gray-50 rounded-sm cursor-move border-l-2 ${t.isRoutine ? 'border-emerald-400' : 'border-transparent'}">
+                            <span onclick="data.calendar['${ds}'][${i}].completed=!data.calendar['${ds}'][${i}].completed;save();render();" class="cursor-pointer ${t.completed ? 'done' : ''}">${t.text}</span>
+                            <button onclick="data.calendar['${ds}'].splice(${i},1);save();render();" class="opacity-0 group-hover:opacity-100 text-gray-300">✕</button>
+                        </div>`;
+                    }).join('')}</div>
+                    <input type="text" placeholder="+" onkeypress="if(event.key==='Enter'&&this.value.trim()){if(!data.calendar['${ds}'])data.calendar['${ds}']=[];data.calendar['${ds}'].push({text:this.value,completed:false});this.value='';save();render();}" class="w-full bg-transparent border-t border-gray-50 pt-4 text-xs outline-none">
+                `;
+                grid.appendChild(col);
+            });
+
+            document.getElementById('week-display').innerText = `${startOfWeek.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} — ${new Date(new Date(startOfWeek).setDate(startOfWeek.getDate()+6)).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+            document.getElementById('progress-bar').style.width = vT ? (vD/vT)*100 + '%' : '0%';
+            document.querySelectorAll('.view-btn').forEach(btn => btn.classList.toggle('active-tab', btn.id === `btn-${currentView}`));
+            
+            renderSidebar(); applyUI();
+            if (activeInputId) { const el = document.getElementById(activeInputId); if (el) el.focus(); }
+        }
+
+        function renderSidebar() {
+            document.getElementById('routine-list').innerHTML = data.routines.map((r, i) => `<div draggable="true" ondragstart="startDrag(event, 'routine', null, ${i})" class="group flex items-center justify-between text-[11px] p-2 bg-emerald-50/30 border border-emerald-100 rounded-sm mb-1 cursor-grab"><span>${r.text}</span><button onclick="data.routines.splice(${i},1);save();render();" class="opacity-0 group-hover:opacity-100 text-emerald-300">✕</button></div>`).join('');
+            document.getElementById('someday-list').innerHTML = data.someday.map((s, i) => `<div draggable="true" ondragstart="startDrag(event, 'someday', null, ${i})" class="group flex items-center justify-between text-[11px] p-2 bg-white border border-gray-100 rounded-sm mb-1 cursor-grab"><span>${s.text}</span><button onclick="data.someday.splice(${i},1);save();render();" class="opacity-0 group-hover:opacity-100 text-gray-300">✕</button></div>`).join('');
+            document.getElementById('project-list').innerHTML = data.projects.map((p, pIdx) => `
+                <div class="mb-6 p-2 rounded-sm hover:bg-gray-50/50" draggable="true" ondragstart="startProjectDrag(event, ${pIdx})" data-p-idx="${pIdx}">
+                    <div class="group flex justify-between items-center mb-2 cursor-move">
+                        <span class="text-[10px] font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2">⠿ ${p.name}</span>
+                        <button onclick="data.projects.splice(${pIdx},1);save();render();" class="opacity-0 group-hover:opacity-100 text-gray-300">✕</button>
+                    </div>
+                    <div class="space-y-1 mb-2">
+                        ${p.tasks.map((t, tIdx) => `<div draggable="true" ondragstart="startDrag(event, 'project-task', pIdx, tIdx)" class="text-[11px] p-2 bg-white shadow-sm border border-gray-100 rounded-sm truncate">${t.text}</div>`).join('')}
+                    </div>
+                    <input type="text" id="p-in-${pIdx}" placeholder="+" onfocus="activeInputId='p-in-${pIdx}'" onkeypress="if(event.key==='Enter'&&this.value.trim()){data.projects[${pIdx}].tasks.push({text:this.value,completed:false});this.value='';save();render();}" class="w-full bg-transparent text-[10px] outline-none border-b border-gray-100">
+                </div>
+            `).join('');
+        }
+
+        function handleRoutineSubmit(e) { if(e.key==='Enter' && e.target.value.trim()){ data.routines.push({text:e.target.value}); e.target.value=''; activeInputId='routine-input-field'; save(); render(); }}
+        function handleSomedaySubmit(e) { if(e.key==='Enter' && e.target.value.trim()){ data.someday.push({text:e.target.value, completed:false}); e.target.value=''; activeInputId='someday-input-field'; save(); render(); }}
+        function handleProjectSubmit(e) { if(e.key==='Enter' && e.target.value.trim()){ data.projects.push({name:e.target.value, tasks:[]}); e.target.value=''; activeInputId='project-master-name-input'; save(); render(); }}
+        function exportData() { const b=new Blob([JSON.stringify(data)], {type:'application/json'}); const u=URL.createObjectURL(b); const a=document.createElement('a'); a.href=u; a.download=`focus-backup.json`; a.click(); }
+
+        window.onload = () => { if(new Date().getHours() >= 19 || new Date().getHours() < 7) document.body.classList.add('dark'); render(); }
+    </script>
+</body>
+</html>
