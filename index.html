@@ -44,14 +44,26 @@
 
         .current-day { border: 2px solid var(--accent) !important; box-shadow: 0 10px 20px -5px rgba(16, 185, 129, 0.15); }
 
+        /* Priority Styling */
+        .priority-task { border-left: 4px solid #f59e0b !important; background-color: #fffbeb !important; }
+        .dark .priority-task { background-color: #2d2510 !important; border-left-color: #f59e0b !important; }
+        
+        .star-icon { color: #d1d5db; cursor: pointer; transition: all 0.2s; }
+        .star-active { color: #f59e0b !important; }
+        .star-icon:hover { color: #f59e0b; scale: 1.2; }
+
+        main { height: 100vh; overflow-y: auto !important; -webkit-overflow-scrolling: touch; }
+
         @media (max-width: 768px) {
-            #sidebar { width: 100% !important; height: auto !important; border-right: 0; border-bottom: 1px solid #eee; }
+            body { overflow-y: auto; }
+            #sidebar { width: 100% !important; height: auto !important; border-right: 0; border-bottom: 1px solid #eee; overflow: visible; }
+            main { height: auto; overflow: visible !important; }
             .nav-edge { width: 40px; height: 40px; }
             .zen-mode #sidebar { height: 0 !important; }
         }
     </style>
 </head>
-<body class="font-sans min-h-screen flex flex-col md:flex-row overflow-hidden select-none">
+<body class="font-sans min-h-screen flex flex-col md:flex-row md:overflow-hidden select-none">
     <div id="progress-bar" class="fixed top-0 left-0 h-0.5 bg-emerald-500 transition-all duration-700 z-50" style="width: 0%"></div>
 
     <aside id="sidebar" class="bg-white border-r border-gray-100 p-6 flex flex-col h-screen overflow-y-auto shrink-0" style="width: 300px;">
@@ -101,7 +113,7 @@
 
     <div id="resizer" class="hidden md:block"></div>
 
-    <main class="flex-1 p-6 md:p-12 bg-white overflow-y-auto relative select-text">
+    <main class="flex-1 p-6 md:p-12 bg-white relative select-text">
         <header class="mb-10 flex justify-between items-center">
             <div class="flex items-center gap-4">
                 <button onclick="toggleZen()" title="Zen Mode" class="p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-300 hover:text-emerald-500">
@@ -116,7 +128,7 @@
             </div>
         </header>
 
-        <div class="relative min-h-[600px]">
+        <div class="relative min-h-[600px] pb-20">
             <button onclick="changeWeek(-1)" class="nav-edge -left-4 md:-left-8" title="Previous Week">←</button>
             <button onclick="changeWeek(1)" class="nav-edge -right-4 md:-right-8" title="Next Week">→</button>
 
@@ -187,7 +199,7 @@
         function dropToDay(e, toDS) {
             e.preventDefault(); if(!draggedInfo) return;
             let t; const { type, src, idx } = draggedInfo;
-            if(type === 'routine') t = { text: data.routines[idx].text, completed: false, isRoutine: true };
+            if(type === 'routine') t = { text: data.routines[idx].text, completed: false, isRoutine: true, priority: false };
             else if(type === 'someday') t = data.someday.splice(idx, 1)[0];
             else if(type === 'calendar') t = data.calendar[src].splice(idx, 1)[0];
             else if(type === 'project-task') t = data.projects[src].tasks.splice(idx, 1)[0];
@@ -195,10 +207,14 @@
             draggedInfo = null;
         }
 
-        // --- INLINE EDITING LOGIC ---
+        function togglePriority(ds, idx) {
+            data.calendar[ds][idx].priority = !data.calendar[ds][idx].priority;
+            save(); render();
+        }
+
         function inlineEdit(e, type, src, idx) {
             const element = e.target;
-            e.stopPropagation(); // Stop click from triggering toggle logic
+            e.stopPropagation();
             
             const currentText = (type === 'project-name') ? data.projects[idx].name : element.innerText;
             const input = document.createElement('input');
@@ -238,38 +254,52 @@
             grid.innerHTML = '';
             let vT = 0, vD = 0; const todayStr = formatDate(new Date());
             const weekDays = [];
+            
+            // Re-generate days correctly based on startOfWeek
             for(let i=0; i<7; i++) {
-                let d = new Date(startOfWeek); d.setDate(d.getDate() + i);
+                let d = new Date(startOfWeek);
+                d.setDate(d.getDate() + i);
                 const ds = formatDate(d);
                 if (currentView === 'day' && ds !== todayStr) continue;
                 if (currentView === 'work' && (d.getDay() === 0 || d.getDay() === 6)) continue;
                 weekDays.push(d);
             }
+            // Ensure Day view shows something even if not today
             if (currentView === 'day' && weekDays.length === 0) weekDays.push(new Date());
 
             grid.className = `grid gap-4 ${currentView === 'day' ? 'grid-cols-1 max-w-2xl mx-auto' : currentView === 'work' ? 'md:grid-cols-5' : 'md:grid-cols-7'}`;
 
             weekDays.forEach(d => {
-                const ds = formatDate(d); const tasks = data.calendar[ds] || [];
+                const ds = formatDate(d);
+                let tasks = data.calendar[ds] || [];
+                
+                // Sorting logic: Priority tasks stay at the top
+                const sortedTasks = [...tasks].sort((a, b) => (b.priority ? 1 : 0) - (a.priority ? 1 : 0));
+
                 const isToday = ds === todayStr;
                 const col = document.createElement('div');
-                col.className = `day-col flex flex-col bg-white p-5 rounded-sm border border-gray-100 min-h-[500px] md:h-[650px] transition-all relative ${isToday ? 'current-day' : ''}`;
+                col.className = `day-col flex flex-col bg-white p-5 rounded-sm border border-gray-100 min-h-[500px] transition-all relative ${isToday ? 'current-day' : ''}`;
                 col.ondragover = allowDrop; col.ondrop = (e) => dropToDay(e, ds);
+                
                 col.innerHTML = `
                     <div class="flex justify-between items-center mb-6 border-b pb-3">
                         <div class="text-[11px] font-black uppercase tracking-widest ${isToday ? 'text-emerald-500' : 'text-gray-400'}">${d.toLocaleDateString('en-US', { weekday: 'long' })} <span class="opacity-30 ml-1 font-mono">${d.getDate()}</span></div>
                         <span onclick="data.calendar['${ds}']=[];save();render();" class="text-[10px] text-gray-300 cursor-pointer hover:text-red-400 ${tasks.length?'':'hidden'}">✕</span>
                     </div>
-                    <div class="flex-1 overflow-y-auto space-y-3 mb-4">${tasks.map((t, i) => {
+                    <input type="text" placeholder="+" onkeypress="if(event.key==='Enter'&&this.value.trim()){if(!data.calendar['${ds}'])data.calendar['${ds}']=[];data.calendar['${ds}'].push({text:this.value,completed:false,priority:false});this.value='';save();render();}" class="w-full bg-transparent border-b border-gray-50 pb-4 mb-4 text-xs outline-none">
+                    
+                    <div class="space-y-3 mb-4">${sortedTasks.map((t, i) => {
                         vT++; if(t.completed) vD++;
-                        return `<div draggable="true" ondragstart="startDrag(event, 'calendar', '${ds}', ${i})" class="group flex items-center justify-between text-xs p-3 bg-gray-50 rounded-sm cursor-move border-l-2 ${t.isRoutine ? 'border-emerald-400' : 'border-transparent'}">
-                            <span onclick="if(event.detail === 1){data.calendar['${ds}'][${i}].completed=!data.calendar['${ds}'][${i}].completed;save();render();}" 
-                                  ondblclick="inlineEdit(event, 'calendar', '${ds}', ${i})"
+                        // We need the original index for toggling/deleting correctly after sorting
+                        const originalIdx = tasks.indexOf(t); 
+                        return `<div draggable="true" ondragstart="startDrag(event, 'calendar', '${ds}', ${originalIdx})" class="group flex items-center justify-between text-xs p-3 bg-gray-50 rounded-sm cursor-move border-l-2 ${t.priority ? 'priority-task' : (t.isRoutine ? 'border-emerald-400' : 'border-transparent')}">
+                            <span onclick="togglePriority('${ds}', ${originalIdx})" class="star-icon mr-2 text-[14px] ${t.priority ? 'star-active' : ''}">${t.priority ? '★' : '☆'}</span>
+                            <span onclick="if(event.detail === 1){data.calendar['${ds}'][${originalIdx}].completed=!data.calendar['${ds}'][${originalIdx}].completed;save();render();}" 
+                                  ondblclick="inlineEdit(event, 'calendar', '${ds}', ${originalIdx})"
                                   class="cursor-pointer flex-1 ${t.completed ? 'done' : ''}">${t.text}</span>
-                            <button onclick="data.calendar['${ds}'].splice(${i},1);save();render();" class="opacity-0 group-hover:opacity-100 text-gray-300 ml-2">✕</button>
+                            <button onclick="data.calendar['${ds}'].splice(${originalIdx},1);save();render();" class="opacity-0 group-hover:opacity-100 text-gray-300 ml-2">✕</button>
                         </div>`;
                     }).join('')}</div>
-                    <input type="text" placeholder="+" onkeypress="if(event.key==='Enter'&&this.value.trim()){if(!data.calendar['${ds}'])data.calendar['${ds}']=[];data.calendar['${ds}'].push({text:this.value,completed:false});this.value='';save();render();}" class="w-full bg-transparent border-t border-gray-50 pt-4 text-xs outline-none">
                 `;
                 grid.appendChild(col);
             });
@@ -289,12 +319,16 @@
                 <div class="mb-6 p-2 rounded-sm hover:bg-gray-50/50" draggable="true" ondragstart="startProjectDrag(event, ${pIdx})" data-p-idx="${pIdx}">
                     <div class="group flex justify-between items-center mb-2 cursor-move">
                         <span class="text-[10px] font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2" ondblclick="inlineEdit(event, 'project-name', null, ${pIdx})">⠿ ${p.name}</span>
-                        <button onclick="data.projects.splice(${pIdx},1);save();render();" class="opacity-0 group-hover:opacity-100 text-gray-300">✕</button>
+                        <button onclick="if(confirm('Delete project?')){data.projects.splice(${pIdx},1);save();render();}" class="opacity-0 group-hover:opacity-100 text-gray-300">✕</button>
                     </div>
                     <div class="space-y-1 mb-2">
-                        ${p.tasks.map((t, tIdx) => `<div draggable="true" ondragstart="startDrag(event, 'project-task', ${pIdx}, ${tIdx})" ondblclick="inlineEdit(event, 'project-task', ${pIdx}, ${tIdx})" class="text-[11px] p-2 bg-white shadow-sm border border-gray-100 rounded-sm cursor-grab truncate">${t.text}</div>`).join('')}
+                        ${p.tasks.map((t, tIdx) => `
+                            <div draggable="true" ondragstart="startDrag(event, 'project-task', ${pIdx}, ${tIdx})" class="group flex items-center justify-between text-[11px] p-2 bg-white shadow-sm border border-gray-100 rounded-sm cursor-grab">
+                                <span ondblclick="inlineEdit(event, 'project-task', ${pIdx}, ${tIdx})" class="truncate flex-1">${t.text}</span>
+                                <button onclick="data.projects[${pIdx}].tasks.splice(${tIdx},1);save();render();" class="opacity-0 group-hover:opacity-100 text-gray-300 ml-2">✕</button>
+                            </div>`).join('')}
                     </div>
-                    <input type="text" id="p-in-${pIdx}" placeholder="+" onfocus="activeInputId='p-in-${pIdx}'" onkeypress="if(event.key==='Enter'&&this.value.trim()){data.projects[${pIdx}].tasks.push({text:this.value,completed:false});this.value='';save();render();}" class="w-full bg-transparent text-[10px] outline-none border-b border-gray-100">
+                    <input type="text" id="p-in-${pIdx}" placeholder="+" onfocus="activeInputId='p-in-${pIdx}'" onkeypress="if(event.key==='Enter'&&this.value.trim()){data.projects[${pIdx}].tasks.push({text:this.value,completed:false,priority:false});this.value='';save();render();}" class="w-full bg-transparent text-[10px] outline-none border-b border-gray-100">
                 </div>
             `).join('');
         }
